@@ -1,0 +1,34 @@
+# Database
+sqlalchemy
+psycopg2-binary
+
+# Vector Database
+qdrant-client
+langchain-qdrant
+fastembed # fastembed-gpu
+
+# LangChain
+langchain
+langchain-openai
+langchain-huggingface
+langgraph
+langchain_community
+# Utils
+python-dotenv
+requests
+pyyaml
+
+# Streamlit
+streamlit
+
+# SmartThings
+pysmartthings
+
+# Google Calendar API (Manager T)
+google-auth
+google-auth-oauthlib
+google-auth-httplib2
+google-api-python-client
+pytz
+
+# mem0ai  # Not used - using direct Qdrant integration instead

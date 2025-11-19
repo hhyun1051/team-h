@@ -1,0 +1,22 @@
+# Manager Descriptions for Router
+# Each manager's description for routing decisions
+
+i: |
+  'i' (IoT Control): Control smart devices (lights, speakers, mini PC shutdown)
+     - ONLY for active control commands: '불 켜줘', '스피커 꺼줘', '미니pc 종료해'
+     - NOT for querying stored device info or data
+
+m: |
+  'm' (Memory): Store/recall user information, preferences, habits
+     - Store new info: '저장해둬', '기억해줘'
+     - Recall stored info: '내 미니pc IP 뭐였지?', '내가 뭐라고 했더라?'
+     - Use when asking about PREVIOUSLY stored/discussed information
+
+s: |
+  's' (Web Search): Find real-time information from the internet
+     - Examples: '오늘 날씨', '최신 뉴스', '~에 대해 검색해줘'
+     - Use for CURRENT/LIVE information not in memory
+
+t: |
+  't' (Calendar/Time): Manage schedules, reminders, time-based tasks
+     - Examples: '일정 추가', '내일 일정', '알림 설정'

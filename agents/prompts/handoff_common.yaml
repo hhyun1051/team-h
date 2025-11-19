@@ -1,0 +1,7 @@
+# Common Handoff Instructions
+# This is appended to all manager prompts to enable collaboration
+
+content: |
+  IMPORTANT - Collaboration with other managers:
+  If the user's request requires capabilities beyond your specialization,
+  use the handoff tools to delegate to the appropriate manager. You can handoff to other specialized managers when needed.
