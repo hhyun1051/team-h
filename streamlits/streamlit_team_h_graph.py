@@ -66,7 +66,7 @@ st.caption(page_config["caption"])
 # ============================================================================
 
 def initialize_session_state():
-    """세션 상태 초기화"""
+    """세션 상태 초기화 및 에이전트 자동 생성"""
     env_defaults = get_env_defaults()
 
     # 브라우저 세션당 고유 session_id 생성 (통합 ID 전략)
@@ -99,7 +99,13 @@ def initialize_session_state():
         enable_manager_m=True,
         enable_manager_s=True,
         enable_manager_t=True,
+        agent_initialized=False,  # 자동 초기화 완료 플래그
     )
+
+    # 에이전트 자동 초기화 (첫 실행 시에만)
+    if st.session_state.agent is None and not st.session_state.agent_initialized:
+        st.session_state.agent = create_agent()
+        st.session_state.agent_initialized = True
 
 
 # ============================================================================
@@ -416,23 +422,23 @@ with st.sidebar:
         st.session_state.messages = []
         st.session_state.routing_history = []
         st.session_state.pending_approval = None
+        # 에이전트는 유지 (캐싱된 인스턴스 재사용)
         print(f"[🔄] Session changed: {old_session[:8]}... → {st.session_state.session_id[:8]}...")
         st.success("새 대화를 시작했습니다!")
         st.rerun()
 
     st.divider()
 
-    if st.session_state.agent is None:
-        if st.button("🚀 에이전트 초기화", use_container_width=True):
-            st.session_state.agent = create_agent()
-            if st.session_state.agent:
-                st.rerun()
-    else:
+    # 에이전트 상태 표시 및 재시작 버튼
+    if st.session_state.agent is not None:
         st.success("✅ 에이전트 활성화됨")
+    else:
+        st.warning("⏳ 에이전트 초기화 중...")
 
-        if st.button("🔄 재시작", use_container_width=True):
-            st.session_state.agent = create_agent()
-            st.rerun()
+    if st.button("🔄 에이전트 재시작", use_container_width=True):
+        st.session_state.agent = create_agent()
+        st.session_state.agent_initialized = True
+        st.rerun()
 
     st.divider()
 
@@ -471,7 +477,7 @@ for msg in st.session_state.messages:
 # 입력
 if prompt := st.chat_input("메시지 입력..."):
     if st.session_state.agent is None:
-        st.warning("⚠️ 먼저 에이전트를 초기화하세요")
+        st.error("❌ 에이전트 초기화에 실패했습니다. 사이드바에서 '에이전트 재시작' 버튼을 눌러주세요.")
         st.stop()
 
     # 사용자 메시지
