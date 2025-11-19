@@ -36,7 +36,7 @@ import os
 
 # Agents import (__init__.py 활용)
 from agents import ManagerI, ManagerM, ManagerS, ManagerT
-from agents.middlewares import create_langfuse_tool_logging_middleware
+from agents.middlewares import LangfuseToolLoggingMiddleware, ToolErrorHandlerMiddleware
 
 
 # ============================================================================
@@ -226,7 +226,7 @@ class TeamHGraph:
 
             # Tool call 로깅을 위한 공통 middleware 생성
             # v3에서는 middleware가 내부적으로 get_client()를 호출함
-            self.tool_logging_middleware = create_langfuse_tool_logging_middleware()
+            self.tool_logging_middleware = LangfuseToolLoggingMiddleware(verbose=True)
             print(f"[✅] Langfuse tool logging middleware created")
         except Exception as e:
             print(f"[⚠️] Langfuse initialization failed: {e}")
