@@ -29,9 +29,8 @@ env/
 # Environment Variables
 .env
 *.env
-memory/.env
-database/postgres/.env
-database/qdrant/.env
+
+# Tests
 tests/
 
 # IDE
@@ -57,9 +56,8 @@ htmlcov/
 *.log
 logs/
 
-# markdown
-*.md
-
+# Credentials
 .credentials/
 
-tests/
+# Markdown (README.md 등을 올리려면 이 줄은 지우세요!)
+*.md
