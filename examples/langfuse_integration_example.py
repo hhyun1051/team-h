@@ -9,9 +9,11 @@ from pathlib import Path
 import sys
 
 # 프로젝트 루트 경로 추가
-sys.path.append(str(Path(__file__).parent.parent))
+project_root = Path(__file__).parent.parent
+sys.path.insert(0, str(project_root))
 
-from agents.team_h_graph import TeamHGraph
+# Agents import (__init__.py 활용)
+from agents import TeamHGraph
 from langfuse.langchain import CallbackHandler
 from langfuse import Langfuse
 

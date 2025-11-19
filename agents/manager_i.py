@@ -20,9 +20,11 @@ import aiohttp
 import time
 
 # 프로젝트 루트 경로 추가
-sys.path.append(str(Path(__file__).parent.parent))
+project_root = Path(__file__).parent.parent
+sys.path.insert(0, str(project_root))
 
-from agents.base_manager import ManagerBase
+# Agents import (__init__.py 활용)
+from agents import ManagerBase
 from langchain.agents.middleware import HumanInTheLoopMiddleware
 from langchain.tools import tool
 
@@ -71,11 +73,12 @@ class ManagerI(ManagerBase):
 
     def __init__(
         self,
-        model_name: str = "gpt-4o-mini",
+        model_name: str = "gpt-4.1-mini",
         temperature: float = 0.7,
         smartthings_token: Optional[str] = None,
         device_config: Optional[Dict[str, str]] = None,
         additional_tools: Optional[List] = None,
+        middleware: Optional[List] = None,
     ):
         """
         Manager I 에이전트 초기화
@@ -86,6 +89,7 @@ class ManagerI(ManagerBase):
             smartthings_token: SmartThings API 토큰
             device_config: 장치 설정 (room_name -> device_id 매핑)
             additional_tools: 핸드오프 등 추가 툴 리스트
+            middleware: 외부에서 전달받은 미들웨어 리스트 (Langfuse 로깅 등)
         """
         # 특수 파라미터 검증 및 저장
         if not smartthings_token:
@@ -111,12 +115,18 @@ class ManagerI(ManagerBase):
             description_prefix="🏠 IoT operation pending approval",
         )
 
+        # middleware 리스트 합치기 (외부 middleware + HITL)
+        combined_middleware = []
+        if middleware:
+            combined_middleware.extend(middleware)
+        combined_middleware.append(hitl_middleware)
+
         # 베이스 클래스 초기화 (공통 로직)
         super().__init__(
             model_name=model_name,
             temperature=temperature,
             additional_tools=additional_tools,
-            middleware=[hitl_middleware],
+            middleware=combined_middleware,
         )
 
         # 추가 초기화 메시지

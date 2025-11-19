@@ -11,8 +11,12 @@ VectorStore 예제 - FastAPI/OpenAI 임베딩 지원
 from vector_store_teamh import VectorStore
 from langchain_core.documents import Document
 import os
+from pathlib import Path
 import dotenv
-dotenv.load_dotenv()
+
+# 프로젝트 루트의 .env 파일 로드
+project_root = Path(__file__).parent.parent.parent
+dotenv.load_dotenv(project_root / ".env")
 
 # ========================================
 # 예제 1: 기본 사용법 (.env 설정 사용)

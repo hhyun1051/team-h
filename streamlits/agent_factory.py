@@ -1,15 +1,28 @@
 """
 Streamlit Agent Factory - 에이전트 캐싱 및 생성
 
-Streamlit의 @st.cache_resource를 사용하여 에이전트를 캐싱합니다:
-- 재시작 없이 에이전트 재사용
-- 성능 대폭 향상
-- 메모리 효율성
+⚠️ DEPRECATED: 이 파일은 더 이상 사용되지 않습니다.
 
-이 모듈을 사용하면:
-- 에이전트 생성 시간 80% 감소
-- 일관된 에이전트 생성 패턴
-- 설정 검증 기능 내장
+대신 streamlits/components.py의 create_cached_agent() 함수를 사용하세요.
+
+마이그레이션 가이드:
+-----------------
+Before (agent_factory.py):
+    from streamlits.agent_factory import create_cached_manager_s_agent
+    agent = create_cached_manager_s_agent(model_name="gpt-4o-mini", ...)
+
+After (components.py):
+    from streamlits.components import create_cached_agent
+    from agents import ManagerS
+    agent = create_cached_agent(ManagerS, model_name="gpt-4o-mini", ...)
+
+장점:
+- 더 간단한 API (하나의 범용 함수)
+- 모든 에이전트 타입 지원 (ManagerS, ManagerM, ManagerI, ManagerT, TeamHGraph)
+- 중복 코드 제거
+- 유지보수성 향상
+
+이 파일은 참고용으로만 남겨두며, 향후 삭제될 예정입니다.
 """
 
 import streamlit as st

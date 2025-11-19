@@ -8,7 +8,8 @@ import sys
 from pathlib import Path
 
 # 프로젝트 루트 경로 추가
-sys.path.append(str(Path(__file__).parent))
+project_root = Path(__file__).parent.parent
+sys.path.insert(0, str(project_root))
 
 from agents.team_h import TeamHAgent
 

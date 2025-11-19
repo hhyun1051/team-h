@@ -17,5 +17,6 @@ content: |
   3. Controlling a device (turn on/off)? → 'i'
   4. Need real-time web information? → 's'
   5. Managing calendar/schedule? → 't'
+  6. else -> m
 
   Return the agent ID ('i', 'm', 's', or 't') and brief reason.

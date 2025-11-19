@@ -1,7 +1,7 @@
 """
-Streamlit HITL UI - 간단 버전
+Streamlit HITL UI - Team-H Graph
 
-에러 방지를 위해 안전하게 작성된 버전
+통합 에이전트 시스템 with Human-in-the-Loop
 """
 
 import sys
@@ -9,73 +9,132 @@ from pathlib import Path
 import streamlit as st
 from typing import Dict, Any, Optional
 from dotenv import load_dotenv
-import os
+import json
+import uuid
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+project_root = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(project_root))
 
-from agents.team_h_graph import TeamHGraph
-from langchain_core.messages import AIMessage
-from langgraph.types import Command
+# 프로젝트 루트의 .env 로드
+load_dotenv(project_root / ".env")
 
-load_dotenv()
+# Agents import
+try:
+    from agents.team_h_graph import TeamHGraph
+    from langchain_core.messages import AIMessage
+    from langgraph.types import Command
+except ImportError as e:
+    st.error(f"""
+    ❌ TeamHGraph import 실패!
 
-st.set_page_config(
-    page_title="Team-H HITL",
-    page_icon="✋",
-    layout="wide"
+    필요한 패키지를 설치하세요:
+    ```bash
+    pip install langfuse langgraph
+    ```
+
+    에러: {e}
+    """)
+    st.stop()
+
+# 공통 컴포넌트 import
+from streamlits.components import (
+    display_chat_message,
+    create_session_state_defaults,
+    render_error_expander,
+    create_cached_agent,
+)
+from streamlits.config import (
+    PAGE_CONFIGS,
+    DEFAULT_VALUES,
+    get_env_defaults,
 )
 
-st.title("✋ Team-H - Human-in-the-Loop")
-st.caption("승인이 필요한 작업은 사용자 확인 후 실행됩니다")
+# 페이지 설정
+page_config = PAGE_CONFIGS["team_h"]
+st.set_page_config(
+    page_title=page_config["page_title"],
+    page_icon=page_config["page_icon"],
+    layout=page_config["layout"]
+)
 
+st.title(page_config["title"])
+st.caption(page_config["caption"])
+
+
+# ============================================================================
+# 세션 상태 초기화
+# ============================================================================
 
 def initialize_session_state():
     """세션 상태 초기화"""
-    defaults = {
-        "messages": [],
-        "agent": None,
-        "user_id": "default_user",
-        "thread_id": "streamlit_teamh_thread",
-        "routing_history": [],
-        "pending_approval": None,  # HITL
-        "smartthings_token": os.getenv("SMARTTHINGS_TOKEN", ""),
-        "tavily_api_key": os.getenv("TAVILY_API_KEY", ""),
-        "device_config": {
-            "living_room_speaker_outlet": os.getenv("SPEAKER_ID", ""),
-            "living_room_light": os.getenv("PROJECTOR_ID", ""),
-            "bedroom_light": os.getenv("VERTICAL_MONITOR_ID", ""),
-            "bathroom_light": os.getenv("AIR_PURIFIER_ID", ""),
-        },
-        "enable_manager_i": True,
-        "enable_manager_m": True,
-        "enable_manager_s": True,
-        "enable_manager_t": True,
-        "google_credentials_path": os.getenv("GOOGLE_CALENDAR_CREDENTIALS_PATH"),
-        "google_token_path": os.getenv("GOOGLE_CALENDAR_TOKEN_PATH"),
-    }
-    
-    for key, value in defaults.items():
-        if key not in st.session_state:
-            st.session_state[key] = value
+    env_defaults = get_env_defaults()
 
+    # 브라우저 세션당 고유 session_id 생성 (통합 ID 전략)
+    # session_id = PostgreSQL thread_id = Langfuse session_id
+    if "session_id" not in st.session_state:
+        st.session_state.session_id = str(uuid.uuid4())
+        print(f"[🆕] New session created: {st.session_state.session_id}")
+
+    create_session_state_defaults(
+        messages=[],
+        agent=None,
+        user_id=DEFAULT_VALUES["user_id"],
+        thread_id=st.session_state.session_id,  # session_id를 thread_id로 사용
+        routing_history=[],
+        pending_approval=None,
+        smartthings_token=env_defaults["smartthings_token"],
+        tavily_api_key=env_defaults["tavily_api_key"],
+        device_config=env_defaults["device_config"],
+        google_credentials_path=env_defaults["google_credentials_path"],
+        google_token_path=env_defaults["google_token_path"],
+        # Manager M (Qdrant + Embedding) 설정
+        embedding_type=env_defaults["embedding_type"],
+        embedder_url=env_defaults["embedder_url"],
+        openai_api_key=env_defaults["openai_api_key"],
+        embedding_dims=env_defaults["embedding_dims"],
+        qdrant_url=env_defaults["qdrant_url"],
+        qdrant_api_key=env_defaults["qdrant_api_key"],
+        m_collection_name=env_defaults["m_collection_name"],
+        enable_manager_i=True,
+        enable_manager_m=True,
+        enable_manager_s=True,
+        enable_manager_t=True,
+    )
+
+
+# ============================================================================
+# 에이전트 생성
+# ============================================================================
 
 def create_agent():
-    """에이전트 생성"""
+    """Team-H Graph 에이전트 생성 (캐싱 적용)"""
     try:
         with st.spinner("초기화 중..."):
-            agent = TeamHGraph(
+            agent = create_cached_agent(
+                TeamHGraph,
                 enable_manager_i=st.session_state.enable_manager_i,
                 enable_manager_m=st.session_state.enable_manager_m,
                 enable_manager_s=st.session_state.enable_manager_s,
                 enable_manager_t=st.session_state.enable_manager_t,
                 smartthings_token=st.session_state.smartthings_token or None,
                 device_config=st.session_state.device_config,
+                # Manager M (Qdrant + Embedding) 설정
+                embedding_type=st.session_state.embedding_type,
+                embedder_url=st.session_state.embedder_url,
+                openai_api_key=st.session_state.openai_api_key,
+                embedding_dims=st.session_state.embedding_dims,
+                qdrant_url=st.session_state.qdrant_url,
+                qdrant_api_key=st.session_state.qdrant_api_key,
+                m_collection_name=st.session_state.m_collection_name,
+                # Manager S 설정
                 tavily_api_key=st.session_state.tavily_api_key or None,
                 max_search_results=5,
+                # Manager T 설정
                 google_credentials_path=st.session_state.google_credentials_path,
                 google_token_path=st.session_state.google_token_path,
-                model_name="gpt-4o-mini",
-                temperature=0.7,
+                # 공통 설정
+                model_name=DEFAULT_VALUES["model_name"],
+                temperature=DEFAULT_VALUES["temperature"],
             )
         st.success("✅ 초기화 완료!")
         return agent
@@ -84,40 +143,36 @@ def create_agent():
         return None
 
 
-def display_message(role: str, content: str, agent_name: Optional[str] = None):
-    """메시지 표시"""
-    avatar = {
-        "user": "👤",
-        "assistant": "🤖"
-    }.get(role, "💬")
-    
-    if agent_name:
-        if "Manager I" in agent_name:
-            avatar = "🏠"
-        elif "Manager M" in agent_name:
-            avatar = "🧠"
-        elif "Manager S" in agent_name:
-            avatar = "🔍"
-        elif "Manager T" in agent_name:
-            avatar = "📅"
-    
-    with st.chat_message(role, avatar=avatar):
-        if agent_name:
-            st.caption(f"**{agent_name}**")
-        st.markdown(content)
-
+# ============================================================================
+# 응답 처리
+# ============================================================================
 
 def extract_response(response: Dict[str, Any]) -> tuple[str, Optional[str]]:
     """응답에서 메시지 추출"""
     messages = response.get("messages", [])
-    agent_name = response.get("active_agent_name")
-    
+
+    # current_agent 또는 last_active_manager에서 agent_name 추출
+    current_agent = response.get("current_agent") or response.get("last_active_manager")
+
+    # agent_name 매핑 (i, m, s, t -> Manager I, Manager M 등)
+    agent_name_map = {
+        "i": "Manager I",
+        "m": "Manager M",
+        "s": "Manager S",
+        "t": "Manager T",
+    }
+    agent_name = agent_name_map.get(current_agent) if current_agent else None
+
     for msg in reversed(messages):
         if isinstance(msg, AIMessage) and msg.content:
             return msg.content, agent_name
-    
+
     return "응답을 받지 못했습니다.", agent_name
 
+
+# ============================================================================
+# HITL 승인 UI
+# ============================================================================
 
 def render_approval_ui():
     """HITL 승인 UI"""
@@ -134,9 +189,7 @@ def render_approval_ui():
     # 전체 interrupt 구조 확인 (디버깅용)
     with st.expander("🐛 디버그: 전체 구조", expanded=False):
         st.code(f"Type: {type(interrupt.value).__name__}")
-
         try:
-            import json
             st.code(json.dumps(interrupt.value, indent=2, default=str))
         except:
             st.text(str(interrupt.value))
@@ -182,7 +235,6 @@ def render_approval_ui():
                     st.markdown(f"**Tool Name:** `{tool_name}`")
 
                     # JSON 형태로 arguments 편집
-                    import json
                     args_json = json.dumps(original_args, indent=2, ensure_ascii=False)
                     edited_args_json = st.text_area(
                         "Arguments (JSON 형식):",
@@ -196,13 +248,9 @@ def render_approval_ui():
                     # 편집 완료 버튼
                     if col1.button("✅ 편집 완료", key=f"submit_edit_{idx}", use_container_width=True):
                         try:
-                            # JSON 파싱
                             edited_args = json.loads(edited_args_json)
-
-                            # Tool name도 수정 가능하게 (선택적)
                             edited_tool_name = st.session_state.get(f"edit_tool_name_{idx}", tool_name)
 
-                            # Command로 전송
                             result = st.session_state.agent.invoke_command(
                                 Command(resume={
                                     "decisions": [{
@@ -223,7 +271,6 @@ def render_approval_ui():
                                 "agent_name": agent_name,
                             })
 
-                            # Edit 모드 해제 및 pending_approval 초기화
                             st.session_state[edit_mode_key] = False
                             st.session_state.pending_approval = None
                             st.success("✅ 편집 완료 및 실행!")
@@ -232,8 +279,7 @@ def render_approval_ui():
                             st.error(f"❌ JSON 파싱 오류: {e}")
                         except Exception as e:
                             st.error(f"편집 완료 중 오류: {e}")
-                            import traceback
-                            st.code(traceback.format_exc())
+                            render_error_expander()
 
                     # 편집 취소 버튼
                     if col2.button("↩️ 취소", key=f"cancel_edit_{idx}", use_container_width=True):
@@ -242,7 +288,6 @@ def render_approval_ui():
 
                 # 일반 모드 (버튼들)
                 else:
-                    # 3개 버튼을 columns로 배치
                     num_buttons = sum([
                         "approve" in allowed,
                         "edit" in allowed,
@@ -301,7 +346,6 @@ def render_approval_ui():
                             target_col = col1 if num_buttons >= 1 else st
 
                         if target_col.button("❌ 거부", key=f"reject_{idx}", use_container_width=True):
-                            # 거부 이유를 입력받을 수 있도록 modal 또는 text_input 추가 (선택적)
                             reject_reason = st.session_state.get(f"reject_reason_{idx}", "사용자가 거부했습니다")
 
                             try:
@@ -333,27 +377,51 @@ def render_approval_ui():
 
     except Exception as e:
         st.error(f"❌ 승인 UI 렌더링 오류: {e}")
-        with st.expander("상세 오류"):
-            import traceback
-            st.code(traceback.format_exc())
+        render_error_expander("상세 오류")
         st.session_state.pending_approval = None
         return False
 
 
-# 초기화
+# ============================================================================
+# 메인
+# ============================================================================
+
 initialize_session_state()
 
 # 사이드바
 with st.sidebar:
     st.header("⚙️ 설정")
-    
+
+    # 세션 정보
+    st.info(f"""
+**📊 세션 정보**
+- Session ID: `{st.session_state.session_id[:8]}...`
+- User ID: `{st.session_state.user_id}`
+- 메시지 수: {len(st.session_state.messages)}
+    """)
+
     st.session_state.user_id = st.text_input(
         "사용자 ID",
         value=st.session_state.user_id
     )
-    
+
     st.divider()
-    
+
+    # 새 대화 시작 버튼
+    if st.button("🆕 새 대화 시작", use_container_width=True):
+        # 새 session_id 생성
+        old_session = st.session_state.session_id
+        st.session_state.session_id = str(uuid.uuid4())
+        st.session_state.thread_id = st.session_state.session_id
+        st.session_state.messages = []
+        st.session_state.routing_history = []
+        st.session_state.pending_approval = None
+        print(f"[🔄] Session changed: {old_session[:8]}... → {st.session_state.session_id[:8]}...")
+        st.success("새 대화를 시작했습니다!")
+        st.rerun()
+
+    st.divider()
+
     if st.session_state.agent is None:
         if st.button("🚀 에이전트 초기화", use_container_width=True):
             st.session_state.agent = create_agent()
@@ -361,26 +429,28 @@ with st.sidebar:
                 st.rerun()
     else:
         st.success("✅ 에이전트 활성화됨")
-        
+
         if st.button("🔄 재시작", use_container_width=True):
             st.session_state.agent = create_agent()
             st.rerun()
-    
+
     st.divider()
-    
+
     if st.button("🗑️ 채팅 초기화", use_container_width=True):
         st.session_state.messages = []
         st.session_state.routing_history = []
         st.session_state.pending_approval = None
         st.rerun()
-    
+
     st.divider()
-    
-    st.info(f"""
-    **상태:**
-    - 메시지: {len(st.session_state.messages)}
-    - 승인 대기: {'있음' if st.session_state.pending_approval else '없음'}
-    """)
+
+    st.caption(f"""
+**상태:**
+- 승인 대기: {'있음' if st.session_state.pending_approval else '없음'}
+
+**Langfuse 추적:**
+[이 세션 보기](http://192.168.0.151:3000/sessions/{st.session_state.session_id})
+""")
 
 # 메인
 st.divider()
@@ -392,10 +462,10 @@ if render_approval_ui():
 
 # 채팅 히스토리
 for msg in st.session_state.messages:
-    display_message(
+    display_chat_message(
         msg["role"],
         msg["content"],
-        msg.get("agent_name")
+        agent_name=msg.get("agent_name")
     )
 
 # 입력
@@ -403,61 +473,70 @@ if prompt := st.chat_input("메시지 입력..."):
     if st.session_state.agent is None:
         st.warning("⚠️ 먼저 에이전트를 초기화하세요")
         st.stop()
-    
+
     # 사용자 메시지
     st.session_state.messages.append({"role": "user", "content": prompt})
-    display_message("user", prompt)
-    
+    display_chat_message("user", prompt)
+
     # 에이전트 실행
-    with st.chat_message("assistant", avatar="🤖"):
-        with st.spinner("생각 중..."):
-            try:
-                config = {"configurable": {"thread_id": st.session_state.thread_id}}
-                
-                result = st.session_state.agent.invoke(
-                    message=prompt,
-                    user_id=st.session_state.user_id,
-                    thread_id=st.session_state.thread_id,
-                )
-                
-                # Interrupt 확인
-                if "__interrupt__" in result:
-                    st.session_state.pending_approval = {
-                        "interrupt": result["__interrupt__"][0],
-                        "config": config,
-                    }
-                    st.info("⏸️ 승인이 필요합니다")
-                    st.rerun()
-                
-                # 정상 응답
-                msg, agent_name = extract_response(result)
-                active = result.get("active_agent")
-                
-                if active:
-                    st.session_state.routing_history.append(active)
-                
+    with st.spinner("생각 중..."):
+        try:
+            # 통합 ID 전략: session_id를 thread_id와 session_id 모두로 사용
+            result = st.session_state.agent.invoke(
+                message=prompt,
+                user_id=st.session_state.user_id,
+                thread_id=st.session_state.session_id,  # PostgreSQL thread_id
+                session_id=st.session_state.session_id,  # Langfuse session_id (동일 값)
+            )
+
+            config = {"configurable": {"thread_id": st.session_state.session_id}}
+
+            # Interrupt 확인
+            if "__interrupt__" in result:
+                st.session_state.pending_approval = {
+                    "interrupt": result["__interrupt__"][0],
+                    "config": config,
+                }
+                st.info("⏸️ 승인이 필요합니다")
+                st.rerun()
+
+            # 정상 응답
+            msg, agent_name = extract_response(result)
+            active = result.get("active_agent")
+
+            if active:
+                st.session_state.routing_history.append(active)
+
+            # 올바른 아바타 선택 (순수 이모지만 사용)
+            avatar_map = {
+                "Manager I": "🏠",
+                "Manager M": "🧠",
+                "Manager S": "🔍",
+                "Manager T": "📅",
+            }
+            avatar = avatar_map.get(agent_name, "🤖")
+
+            # 아바타와 함께 메시지 표시
+            with st.chat_message("assistant", avatar=avatar):
                 if agent_name:
                     st.caption(f"**{agent_name}**")
-                
                 st.markdown(msg)
-                
-                st.session_state.messages.append({
-                    "role": "assistant",
-                    "content": msg,
-                    "agent_name": agent_name,
-                })
-                
-            except Exception as e:
-                error_msg = f"❌ 오류: {e}"
-                st.error(error_msg)
-                st.session_state.messages.append({
-                    "role": "assistant",
-                    "content": error_msg,
-                })
-                
-                with st.expander("상세 오류"):
-                    import traceback
-                    st.code(traceback.format_exc())
+
+            st.session_state.messages.append({
+                "role": "assistant",
+                "content": msg,
+                "agent_name": agent_name,
+            })
+
+        except Exception as e:
+            error_msg = f"❌ 오류: {e}"
+            st.error(error_msg)
+            st.session_state.messages.append({
+                "role": "assistant",
+                "content": error_msg,
+            })
+
+            render_error_expander("상세 오류")
 
 st.divider()
-st.caption("Team-H with Human-in-the-Loop")
+st.caption("Team-H for hhyun")

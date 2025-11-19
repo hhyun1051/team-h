@@ -16,8 +16,8 @@ from dotenv import load_dotenv
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
-# .env 파일 로드
-load_dotenv(Path(__file__).parent / ".env")
+# 프로젝트 루트의 .env 파일 로드
+load_dotenv(project_root / ".env")
 
 
 @pytest.fixture(scope="session")

@@ -14,23 +14,29 @@ from typing import Annotated, Literal, Optional, Dict, Any, TypedDict, List
 from pydantic import BaseModel, Field
 
 # 프로젝트 루트 경로 추가
-sys.path.append(str(Path(__file__).parent.parent))
+project_root = Path(__file__).parent.parent
+sys.path.insert(0, str(project_root))
 
 from langgraph.graph import StateGraph, END
 from langgraph.graph.message import add_messages
 from langgraph.checkpoint.memory import MemorySaver
+from langgraph.checkpoint.postgres import PostgresSaver
 from langgraph.types import Command
 from langchain_core.messages import AIMessage, HumanMessage
 from langchain.chat_models import init_chat_model
 from langchain_core.tools import tool
+import psycopg
+from psycopg_pool import ConnectionPool
+from psycopg.rows import dict_row
 
 # Langfuse 통합
-from langfuse import observe
+from langfuse import observe, get_client
+from langfuse.langchain import CallbackHandler
+import os
 
-from agents.manager_i import ManagerI
-from agents.manager_m import ManagerM
-from agents.manager_s import ManagerS
-from agents.manager_t import ManagerT
+# Agents import (__init__.py 활용)
+from agents import ManagerI, ManagerM, ManagerS, ManagerT
+from agents.middlewares import create_langfuse_tool_logging_middleware
 
 
 # ============================================================================
@@ -105,6 +111,10 @@ class TeamHGraph:
         model_name: str = "gpt-4.1-mini",
         temperature: float = 0.7,
         max_handoffs: int = 5,
+
+        # PostgreSQL checkpoint params
+        postgres_connection_string: Optional[str] = None,
+        use_postgres_checkpoint: bool = True,
     ):
         """
         Team-H Graph 초기화
@@ -131,8 +141,18 @@ class TeamHGraph:
             model_name: LLM 모델 이름
             temperature: 모델 temperature
             max_handoffs: 최대 핸드오프 횟수 (무한 루프 방지)
+            postgres_connection_string: PostgreSQL connection string (옵션)
+            use_postgres_checkpoint: PostgreSQL checkpoint 사용 여부 (기본값: True)
         """
         print(f"[🤖] Initializing Team-H Graph System...")
+
+        # Langfuse 초기화 (환경 변수 기반)
+        self._init_langfuse()
+
+        # PostgreSQL Checkpoint 초기화
+        self.use_postgres_checkpoint = use_postgres_checkpoint
+        self.postgres_connection_string = postgres_connection_string
+        self._init_postgres_checkpoint()
 
         self.model_name = model_name
         self.temperature = temperature
@@ -187,6 +207,83 @@ class TeamHGraph:
 
         print(f"[✅] Team-H Graph System initialized successfully")
         print(f"    - Max handoffs: {self.max_handoffs}")
+
+    def _init_langfuse(self):
+        """Langfuse 초기화 (환경 변수 기반)"""
+        try:
+            # .env 파일이 있으면 로드
+            from pathlib import Path
+            from dotenv import load_dotenv
+
+            env_path = Path(__file__).parent.parent / ".env"
+            if env_path.exists():
+                load_dotenv(env_path)
+
+            # Langfuse v3: singleton client 사용 (환경 변수 자동 사용)
+            # LANGFUSE_SECRET_KEY, LANGFUSE_PUBLIC_KEY, LANGFUSE_BASE_URL
+            self.langfuse_client = get_client()
+            print(f"[✅] Langfuse initialized: {os.getenv('LANGFUSE_BASE_URL')}")
+
+            # Tool call 로깅을 위한 공통 middleware 생성
+            # v3에서는 middleware가 내부적으로 get_client()를 호출함
+            self.tool_logging_middleware = create_langfuse_tool_logging_middleware()
+            print(f"[✅] Langfuse tool logging middleware created")
+        except Exception as e:
+            print(f"[⚠️] Langfuse initialization failed: {e}")
+            self.langfuse_client = None
+            self.tool_logging_middleware = None
+
+    def _init_postgres_checkpoint(self):
+        """PostgreSQL checkpoint 초기화"""
+        if not self.use_postgres_checkpoint:
+            print(f"[ℹ️] Using in-memory checkpoint (MemorySaver)")
+            self.checkpointer = MemorySaver()
+            return
+
+        try:
+            # .env 파일이 있으면 로드 (Langfuse 초기화에서 이미 했을 수 있지만 안전하게)
+            from pathlib import Path
+            from dotenv import load_dotenv
+
+            env_path = Path(__file__).parent.parent / ".env"
+            if env_path.exists():
+                load_dotenv(env_path)
+
+            # 환경 변수에서 connection string 가져오기
+            conn_string = self.postgres_connection_string or os.getenv(
+                "POSTGRES_CONNECTION_STRING"
+            )
+
+            if not conn_string:
+                print(f"[⚠️] PostgreSQL connection string not found, falling back to MemorySaver")
+                print(f"[ℹ️] Set POSTGRES_CONNECTION_STRING in .env or pass postgres_connection_string parameter")
+                self.checkpointer = MemorySaver()
+                return
+
+            # Connection pool 생성
+            self.db_pool = ConnectionPool(
+                conninfo=conn_string,
+                max_size=20,
+                kwargs={
+                    "autocommit": True,
+                    "prepare_threshold": 0,
+                    "row_factory": dict_row,
+                }
+            )
+
+            # PostgresSaver 초기화
+            self.checkpointer = PostgresSaver(self.db_pool)
+
+            # 테이블 자동 생성 (없으면 생성)
+            self.checkpointer.setup()
+
+            print(f"[✅] PostgreSQL checkpoint initialized")
+            print(f"[ℹ️] Chat history will be persisted to PostgreSQL")
+
+        except Exception as e:
+            print(f"[⚠️] PostgreSQL checkpoint initialization failed: {e}")
+            print(f"[ℹ️] Falling back to in-memory checkpoint (MemorySaver)")
+            self.checkpointer = MemorySaver()
 
     def _init_router_llm(self):
         """라우터 LLM 초기화"""
@@ -345,6 +442,11 @@ class TeamHGraph:
     def _init_managers(self):
         """각 Manager를 handoff tools와 함께 초기화"""
 
+        # 공통 middleware 리스트 (모든 Manager에 적용)
+        common_middlewares = []
+        if self.tool_logging_middleware:
+            common_middlewares.append(self.tool_logging_middleware)
+
         # Manager I 초기화
         if self.enable_manager_i:
             try:
@@ -363,6 +465,7 @@ class TeamHGraph:
                     smartthings_token=self.smartthings_token,
                     device_config=self.device_config,
                     additional_tools=handoff_tools_for_i if handoff_tools_for_i else None,
+                    middleware=common_middlewares if common_middlewares else None,
                 )
                 print(f"[✅] Manager I initialized")
             except Exception as e:
@@ -392,6 +495,7 @@ class TeamHGraph:
                     qdrant_api_key=self.qdrant_api_key,
                     collection_name=self.m_collection_name,
                     additional_tools=handoff_tools_for_m if handoff_tools_for_m else None,
+                    middleware=common_middlewares if common_middlewares else None,
                 )
                 print(f"[✅] Manager M initialized")
             except Exception as e:
@@ -416,6 +520,7 @@ class TeamHGraph:
                     tavily_api_key=self.tavily_api_key,
                     max_results=self.max_search_results,
                     additional_tools=handoff_tools_for_s if handoff_tools_for_s else None,
+                    middleware=common_middlewares if common_middlewares else None,
                 )
                 print(f"[✅] Manager S initialized")
             except Exception as e:
@@ -441,6 +546,7 @@ class TeamHGraph:
                     google_token_path=self.google_token_path,
                     calendar_id=self.calendar_id,
                     additional_tools=handoff_tools_for_t if handoff_tools_for_t else None,
+                    middleware=common_middlewares if common_middlewares else None,
                 )
                 print(f"[✅] Manager T initialized")
             except Exception as e:
@@ -472,8 +578,8 @@ class TeamHGraph:
         # Command 패턴을 사용하므로 conditional edges 불필요
         # 각 노드에서 Command의 goto 파라미터로 다음 노드를 직접 지정
 
-        # 컴파일
-        return workflow.compile(checkpointer=MemorySaver())
+        # 컴파일 - PostgresSaver 또는 MemorySaver 사용
+        return workflow.compile(checkpointer=self.checkpointer)
 
     # ========================================================================
     # 노드 함수들
@@ -539,12 +645,14 @@ class TeamHGraph:
             config=manager_config
         )
 
-        # 마지막 AI 메시지 추출
-        ai_response = self._extract_last_ai_message(result)
+        # Agent 실행 결과에서 새로 생성된 메시지들 추출
+        # (기존 state 이후에 생성된 모든 메시지: AIMessage with tool_calls, ToolMessage, 최종 AIMessage)
+        original_msg_count = len(state["messages"])
+        new_messages = result["messages"][original_msg_count:]
 
-        # Handoff tool 호출 감지
+        # Handoff tool 호출 감지 (새로 생성된 메시지만 검사)
         handoff_count = state.get("handoff_count", 0)
-        handoff_target = self._detect_handoff(result)
+        handoff_target = self._detect_handoff(result, original_msg_count)
 
         # 무한 루프 방지
         if handoff_count >= self.max_handoffs:
@@ -564,14 +672,14 @@ class TeamHGraph:
             goto = f"manager_{next_agent}"
 
         # last_active_manager 업데이트
-        # Handoff가 발생하면 handoff_target으로, 아니면 현재 Manager (i)로 설정
+        # Handoff가 발생하면 handoff_target으로, 종료 시에는 현재 Manager 유지
         last_active = next_agent if next_agent != "end" else "i"
 
-        # Command로 반환
+        # Command로 반환 - 새로 생성된 모든 메시지 추가 (ToolMessage 포함)
         return Command(
             goto=goto,
             update={
-                "messages": [AIMessage(content=ai_response)],
+                "messages": new_messages,  # ✅ AIMessage, ToolMessage 모두 포함
                 "handoff_count": handoff_count + (1 if next_agent != "end" else 0),
                 "current_agent": "i",
                 "last_active_manager": last_active,
@@ -609,12 +717,14 @@ class TeamHGraph:
             config=manager_config
         )
 
-        # 마지막 AI 메시지 추출
-        ai_response = self._extract_last_ai_message(result)
+        # Agent 실행 결과에서 새로 생성된 메시지들 추출
+        # (기존 state 이후에 생성된 모든 메시지: AIMessage with tool_calls, ToolMessage, 최종 AIMessage)
+        original_msg_count = len(state["messages"])
+        new_messages = result["messages"][original_msg_count:]
 
-        # Handoff tool 호출 감지
+        # Handoff tool 호출 감지 (새로 생성된 메시지만 검사)
         handoff_count = state.get("handoff_count", 0)
-        handoff_target = self._detect_handoff(result)
+        handoff_target = self._detect_handoff(result, original_msg_count)
 
         # 무한 루프 방지
         if handoff_count >= self.max_handoffs:
@@ -634,14 +744,14 @@ class TeamHGraph:
             goto = f"manager_{next_agent}"
 
         # last_active_manager 업데이트
-        # Handoff가 발생하면 handoff_target으로, 아니면 현재 Manager (m)로 설정
+        # Handoff가 발생하면 handoff_target으로, 종료 시에는 현재 Manager 유지
         last_active = next_agent if next_agent != "end" else "m"
 
-        # Command로 반환
+        # Command로 반환 - 새로 생성된 모든 메시지 추가 (ToolMessage 포함)
         return Command(
             goto=goto,
             update={
-                "messages": [AIMessage(content=ai_response)],
+                "messages": new_messages,  # ✅ AIMessage, ToolMessage 모두 포함
                 "handoff_count": handoff_count + (1 if next_agent != "end" else 0),
                 "current_agent": "m",
                 "last_active_manager": last_active,
@@ -663,12 +773,14 @@ class TeamHGraph:
             config=manager_config
         )
 
-        # 마지막 AI 메시지 추출
-        ai_response = self._extract_last_ai_message(result)
+        # Agent 실행 결과에서 새로 생성된 메시지들 추출
+        # (기존 state 이후에 생성된 모든 메시지: AIMessage with tool_calls, ToolMessage, 최종 AIMessage)
+        original_msg_count = len(state["messages"])
+        new_messages = result["messages"][original_msg_count:]
 
-        # Handoff tool 호출 감지
+        # Handoff tool 호출 감지 (새로 생성된 메시지만 검사)
         handoff_count = state.get("handoff_count", 0)
-        handoff_target = self._detect_handoff(result)
+        handoff_target = self._detect_handoff(result, original_msg_count)
 
         # 무한 루프 방지
         if handoff_count >= self.max_handoffs:
@@ -688,14 +800,14 @@ class TeamHGraph:
             goto = f"manager_{next_agent}"
 
         # last_active_manager 업데이트
-        # Handoff가 발생하면 handoff_target으로, 아니면 현재 Manager (s)로 설정
+        # Handoff가 발생하면 handoff_target으로, 종료 시에는 현재 Manager 유지
         last_active = next_agent if next_agent != "end" else "s"
 
-        # Command로 반환
+        # Command로 반환 - 새로 생성된 모든 메시지 추가 (ToolMessage 포함)
         return Command(
             goto=goto,
             update={
-                "messages": [AIMessage(content=ai_response)],
+                "messages": new_messages,  # ✅ AIMessage, ToolMessage 모두 포함
                 "handoff_count": handoff_count + (1 if next_agent != "end" else 0),
                 "current_agent": "s",
                 "last_active_manager": last_active,
@@ -717,12 +829,14 @@ class TeamHGraph:
             config=manager_config
         )
 
-        # 마지막 AI 메시지 추출
-        ai_response = self._extract_last_ai_message(result)
+        # Agent 실행 결과에서 새로 생성된 메시지들 추출
+        # (기존 state 이후에 생성된 모든 메시지: AIMessage with tool_calls, ToolMessage, 최종 AIMessage)
+        original_msg_count = len(state["messages"])
+        new_messages = result["messages"][original_msg_count:]
 
-        # Handoff tool 호출 감지
+        # Handoff tool 호출 감지 (새로 생성된 메시지만 검사)
         handoff_count = state.get("handoff_count", 0)
-        handoff_target = self._detect_handoff(result)
+        handoff_target = self._detect_handoff(result, original_msg_count)
 
         # 무한 루프 방지
         if handoff_count >= self.max_handoffs:
@@ -742,14 +856,14 @@ class TeamHGraph:
             goto = f"manager_{next_agent}"
 
         # last_active_manager 업데이트
-        # Handoff가 발생하면 handoff_target으로, 아니면 현재 Manager (t)로 설정
+        # Handoff가 발생하면 handoff_target으로, 종료 시에는 현재 Manager 유지
         last_active = next_agent if next_agent != "end" else "t"
 
-        # Command로 반환
+        # Command로 반환 - 새로 생성된 모든 메시지 추가 (ToolMessage 포함)
         return Command(
             goto=goto,
             update={
-                "messages": [AIMessage(content=ai_response)],
+                "messages": new_messages,  # ✅ AIMessage, ToolMessage 모두 포함
                 "handoff_count": handoff_count + (1 if next_agent != "end" else 0),
                 "current_agent": "t",
                 "last_active_manager": last_active,
@@ -760,20 +874,24 @@ class TeamHGraph:
     # 헬퍼 함수들
     # ========================================================================
 
-    def _detect_handoff(self, result: Dict[str, Any]) -> Optional[str]:
+    def _detect_handoff(self, result: Dict[str, Any], original_msg_count: int) -> Optional[str]:
         """
-        결과에서 handoff tool 호출 감지
+        결과에서 handoff tool 호출 감지 (새로 생성된 메시지만 검사)
 
         Args:
             result: Manager agent의 실행 결과
+            original_msg_count: 실행 전 메시지 개수
 
         Returns:
             handoff 대상 agent ID ("i", "m", "s", "t") 또는 None
         """
         messages = result.get("messages", [])
 
+        # 새로 생성된 메시지만 검사 (이전 handoff 재감지 방지)
+        new_messages = messages[original_msg_count:]
+
         # 역순으로 확인 (최근 메시지부터)
-        for msg in reversed(messages):
+        for msg in reversed(new_messages):
             # ToolMessage 확인
             if hasattr(msg, "type") and msg.type == "tool":
                 content = str(msg.content)
@@ -810,6 +928,7 @@ class TeamHGraph:
         message: str,
         user_id: str = "default_user",
         thread_id: str = "default",
+        session_id: Optional[str] = None,
         callbacks: Optional[List] = None,
     ) -> Dict[str, Any]:
         """
@@ -817,16 +936,42 @@ class TeamHGraph:
 
         Args:
             message: 사용자 메시지
-            user_id: 사용자 ID
-            thread_id: 스레드 ID
+            user_id: 사용자 ID (예: "user-123", 로그인 시스템에서 제공)
+            thread_id: PostgreSQL checkpoint thread ID (대화 세션 식별)
+            session_id: Langfuse session ID (옵션, 없으면 thread_id 사용)
             callbacks: Langfuse CallbackHandler 등의 콜백 리스트
 
         Returns:
             최종 상태
+
+        Note:
+            통합 ID 전략:
+            - thread_id: PostgreSQL checkpoint (대화 저장/재개)
+            - session_id: Langfuse 추적 (없으면 thread_id 사용)
+            - user_id: 사용자 식별 (PostgreSQL + Langfuse)
         """
+        # session_id가 없으면 thread_id를 session_id로 사용 (통합 전략)
+        if session_id is None:
+            session_id = thread_id
+
+        # Langfuse CallbackHandler 자동 생성
+        if callbacks is None and self.langfuse_client:
+            try:
+                # v3: session_id, user_id는 metadata로 전달
+                langfuse_handler = CallbackHandler()
+                callbacks = [langfuse_handler]
+            except Exception as e:
+                print(f"[⚠️] Failed to create Langfuse handler: {e}")
+                callbacks = []
+
         config = {
             "configurable": {"thread_id": thread_id},
             "callbacks": callbacks or [],
+            "metadata": {
+                "langfuse_session_id": session_id,  # Langfuse v3: metadata로 session_id 전달
+                "langfuse_user_id": user_id,        # Langfuse v3: metadata로 user_id 전달
+                "langfuse_tags": ["team-h", "graph"],
+            }
         }
 
         initial_state = {
@@ -862,6 +1007,7 @@ class TeamHGraph:
         message: str,
         user_id: str = "default_user",
         thread_id: str = "default",
+        session_id: Optional[str] = None,
         callbacks: Optional[List] = None,
     ):
         """
@@ -869,16 +1015,36 @@ class TeamHGraph:
 
         Args:
             message: 사용자 메시지
-            user_id: 사용자 ID
-            thread_id: 스레드 ID
+            user_id: 사용자 ID (예: "user-123")
+            thread_id: PostgreSQL checkpoint thread ID (대화 세션 식별)
+            session_id: Langfuse session ID (옵션, 없으면 thread_id 사용)
             callbacks: Langfuse CallbackHandler 등의 콜백 리스트
 
         Yields:
             각 노드 실행 결과
         """
+        # session_id가 없으면 thread_id를 session_id로 사용
+        if session_id is None:
+            session_id = thread_id
+
+        # Langfuse CallbackHandler 자동 생성
+        if callbacks is None and self.langfuse_client:
+            try:
+                # v3: session_id, user_id는 metadata로 전달
+                langfuse_handler = CallbackHandler()
+                callbacks = [langfuse_handler]
+            except Exception as e:
+                print(f"[⚠️] Failed to create Langfuse handler: {e}")
+                callbacks = []
+
         config = {
             "configurable": {"thread_id": thread_id},
             "callbacks": callbacks or [],
+            "metadata": {
+                "langfuse_session_id": session_id,  # Langfuse v3: metadata로 session_id 전달
+                "langfuse_user_id": user_id,        # Langfuse v3: metadata로 user_id 전달
+                "langfuse_tags": ["team-h", "graph"],
+            }
         }
 
         initial_state = {

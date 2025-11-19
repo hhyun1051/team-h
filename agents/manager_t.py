@@ -21,9 +21,11 @@ from datetime import datetime, timedelta
 import pytz
 
 # 프로젝트 루트 경로 추가
-sys.path.append(str(Path(__file__).parent.parent))
+project_root = Path(__file__).parent.parent
+sys.path.insert(0, str(project_root))
 
-from agents.base_manager import ManagerBase
+# Agents import (__init__.py 활용)
+from agents import ManagerBase
 from langchain.agents.middleware import HumanInTheLoopMiddleware
 from langchain.tools import tool
 from pydantic import BaseModel, Field
@@ -72,12 +74,13 @@ class ManagerT(ManagerBase):
 
     def __init__(
         self,
-        model_name: str = "gpt-4o-mini",
+        model_name: str = "gpt-4.1-mini",
         temperature: float = 0.7,
         google_credentials_path: Optional[str] = None,
         google_token_path: Optional[str] = None,
         calendar_id: str = "primary",
         additional_tools: Optional[List] = None,
+        middleware: Optional[List] = None,
     ):
         """
         Manager T 에이전트 초기화
@@ -89,6 +92,7 @@ class ManagerT(ManagerBase):
             google_token_path: Google OAuth token.json 저장 경로
             calendar_id: 사용할 Google Calendar ID (기본값: primary)
             additional_tools: 핸드오프 등 추가 툴 리스트
+            middleware: 외부에서 주입할 middleware 리스트
         """
         if not GOOGLE_AVAILABLE:
             raise ImportError("Google API libraries are required for Manager T. Please install them first.")
@@ -104,12 +108,18 @@ class ManagerT(ManagerBase):
             description_prefix="📅 Calendar operation pending approval",
         )
 
+        # middleware 리스트 합치기 (외부 middleware + HITL)
+        combined_middleware = []
+        if middleware:
+            combined_middleware.extend(middleware)
+        combined_middleware.append(hitl_middleware)
+
         # 베이스 클래스 초기화 (공통 로직)
         super().__init__(
             model_name=model_name,
             temperature=temperature,
             additional_tools=additional_tools,
-            middleware=[hitl_middleware],
+            middleware=combined_middleware,
             # Google Calendar 초기화를 위한 파라미터 전달
             google_credentials_path=google_credentials_path,
             google_token_path=google_token_path,
@@ -212,6 +222,9 @@ When creating events, ALWAYS use year {now_kst.year}, not past years!
             return "❌ Google Calendar service is not available. Please check authentication."
 
         try:
+            print(f"[DEBUG] _list_events_internal called")
+            print(f"[DEBUG] API request - timeMin: {start_date}, timeMax: {end_date}")
+
             # 이벤트 조회
             events_result = self.calendar_service.events().list(
                 calendarId=self.calendar_id,
@@ -232,20 +245,55 @@ When creating events, ALWAYS use year {now_kst.year}, not past years!
             for i, event in enumerate(events, 1):
                 title = event.get('summary', '(제목 없음)')
                 start = event.get('start', {}).get('dateTime', event.get('start', {}).get('date'))
+                end = event.get('end', {}).get('dateTime', event.get('end', {}).get('date'))
                 event_id = event.get('id')
 
                 # 시간 파싱 및 포맷팅
                 try:
                     start_dt = datetime.fromisoformat(start.replace('Z', '+00:00'))
-                    time_str = start_dt.strftime('%Y-%m-%d %H:%M')
-                except:
-                    time_str = start
+                    # KST로 변환
+                    start_dt_kst = start_dt.astimezone(KST)
 
-                formatted_events.append(
-                    f"{i}. 📌 {title}\n"
-                    f"   ⏰ {time_str}\n"
-                    f"   🆔 {event_id}"
-                )
+                    # 종료 시간도 파싱
+                    if end:
+                        end_dt = datetime.fromisoformat(end.replace('Z', '+00:00'))
+                        end_dt_kst = end_dt.astimezone(KST)
+
+                        # 여러 날에 걸친 일정인지 확인
+                        start_date = start_dt_kst.date()
+                        end_date = end_dt_kst.date()
+
+
+                        if start_date == end_date:
+                            # 같은 날: 시작-종료 시간 표시
+                            formatted_events.append(
+                                f"{i}. 📌 {title}\n"
+                                f"   ⏰ 시작: {start_dt_kst.strftime('%Y-%m-%d %H:%M')}\n"
+                                f"   ⏰ 종료: {end_dt_kst.strftime('%H:%M')}\n"
+                                f"   🆔 {event_id}"
+                            )
+                        else:
+                            # 여러 날: 시작 날짜와 종료 날짜 모두 표시
+                            formatted_events.append(
+                                f"{i}. 📌 {title}\n"
+                                f"   ⏰ 시작: {start_dt_kst.strftime('%Y-%m-%d %H:%M')}\n"
+                                f"   ⏰ 종료: {end_dt_kst.strftime('%Y-%m-%d %H:%M')}\n"
+                                f"   🆔 {event_id}"
+                            )
+                    else:
+                        # 종료 시간 없음 (시작 시간만)
+                        formatted_events.append(
+                            f"{i}. 📌 {title}\n"
+                            f"   ⏰ {start_dt_kst.strftime('%Y-%m-%d %H:%M')}\n"
+                            f"   🆔 {event_id}"
+                        )
+
+                except Exception as e:
+                    formatted_events.append(
+                        f"{i}. 📌 {title}\n"
+                        f"   ⏰ {start}\n"
+                        f"   🆔 {event_id}"
+                    )
 
             return "\n\n".join(formatted_events)
 
@@ -292,17 +340,14 @@ When creating events, ALWAYS use year {now_kst.year}, not past years!
                 return "❌ Google Calendar service is not available. Please check authentication."
 
             try:
-                print(f"[DEBUG] Parsing start_time...")
                 # ISO 8601 형식의 시간을 파싱
                 start_dt = datetime.fromisoformat(start_time.replace('Z', '+00:00'))
-                print(f"[DEBUG] start_dt parsed: {start_dt}")
 
                 # end_time이 없으면 start_time + 1시간
                 if end_time:
                     end_dt = datetime.fromisoformat(end_time.replace('Z', '+00:00'))
                 else:
                     end_dt = start_dt + timedelta(hours=1)
-                print(f"[DEBUG] end_dt: {end_dt}")
 
                 # 이벤트 구조 생성
                 event = {
@@ -509,6 +554,10 @@ When creating events, ALWAYS use year {now_kst.year}, not past years!
             now = datetime.now(KST)
             today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
             today_end = now.replace(hour=23, minute=59, second=59, microsecond=999999)
+
+            print(f"[DEBUG] get_today_events called")
+            print(f"[DEBUG] Current time (KST): {now}")
+            print(f"[DEBUG] Search range: {today_start.isoformat()} ~ {today_end.isoformat()}")
 
             return self._list_events_internal(
                 start_date=today_start.isoformat(),

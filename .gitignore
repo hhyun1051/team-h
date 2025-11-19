@@ -32,6 +32,7 @@ env/
 memory/.env
 database/postgres/.env
 database/qdrant/.env
+tests/
 
 # IDE
 .vscode/
@@ -60,3 +61,5 @@ logs/
 *.md
 
 .credentials/
+
+tests/

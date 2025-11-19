@@ -16,10 +16,11 @@ import pytest
 import time
 
 # 프로젝트 루트 추가
-sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+project_root = Path(__file__).parent.parent.parent
+sys.path.insert(0, str(project_root))
 
-# .env 로드
-load_dotenv(Path(__file__).parent / ".env")
+# 프로젝트 루트의 .env 로드
+load_dotenv(project_root / ".env")
 
 from agents.manager_i import ManagerIAgent
 from langchain_core.messages import AIMessage

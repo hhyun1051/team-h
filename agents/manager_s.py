@@ -16,9 +16,11 @@ from pathlib import Path
 from typing import Optional, List
 
 # 프로젝트 루트 경로 추가
-sys.path.append(str(Path(__file__).parent.parent))
+project_root = Path(__file__).parent.parent
+sys.path.insert(0, str(project_root))
 
-from agents.base_manager import ManagerBase
+# Agents import (__init__.py 활용)
+from agents import ManagerBase
 from langchain.tools import tool
 
 # Tavily Search
@@ -34,11 +36,12 @@ class ManagerS(ManagerBase):
 
     def __init__(
         self,
-        model_name: str = "gpt-4o-mini",
+        model_name: str = "gpt-4.1-mini",
         temperature: float = 0.7,
         tavily_api_key: Optional[str] = None,
         max_results: int = 5,
         additional_tools: Optional[List] = None,
+        middleware: Optional[List] = None,
     ):
         """
         Manager S 에이전트 초기화
@@ -49,6 +52,7 @@ class ManagerS(ManagerBase):
             tavily_api_key: Tavily API 키
             max_results: 검색 결과 최대 개수
             additional_tools: 핸드오프 등 추가 툴 리스트
+            middleware: 외부에서 전달받은 미들웨어 리스트 (Langfuse 로깅 등)
         """
         # 특수 파라미터 검증 및 저장
         if not tavily_api_key:
@@ -58,11 +62,12 @@ class ManagerS(ManagerBase):
         self.max_results = max_results
 
         # 베이스 클래스 초기화 (공통 로직)
+        # 검색은 안전한 작업이므로 HITL 불필요 (외부 middleware만 전달)
         super().__init__(
             model_name=model_name,
             temperature=temperature,
             additional_tools=additional_tools,
-            middleware=None,  # 검색은 안전한 작업이므로 HITL 불필요
+            middleware=middleware,
         )
 
         # 추가 초기화 메시지
