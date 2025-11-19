@@ -259,27 +259,13 @@ When creating events, ALWAYS use year {now_kst.year}, not past years!
                         end_dt = datetime.fromisoformat(end.replace('Z', '+00:00'))
                         end_dt_kst = end_dt.astimezone(KST)
 
-                        # 여러 날에 걸친 일정인지 확인
-                        start_date = start_dt_kst.date()
-                        end_date = end_dt_kst.date()
-
-
-                        if start_date == end_date:
-                            # 같은 날: 시작-종료 시간 표시
-                            formatted_events.append(
-                                f"{i}. 📌 {title}\n"
-                                f"   ⏰ 시작: {start_dt_kst.strftime('%Y-%m-%d %H:%M')}\n"
-                                f"   ⏰ 종료: {end_dt_kst.strftime('%H:%M')}\n"
-                                f"   🆔 {event_id}"
-                            )
-                        else:
-                            # 여러 날: 시작 날짜와 종료 날짜 모두 표시
-                            formatted_events.append(
-                                f"{i}. 📌 {title}\n"
-                                f"   ⏰ 시작: {start_dt_kst.strftime('%Y-%m-%d %H:%M')}\n"
-                                f"   ⏰ 종료: {end_dt_kst.strftime('%Y-%m-%d %H:%M')}\n"
-                                f"   🆔 {event_id}"
-                            )
+                        # 시작-종료 시간 표시
+                        formatted_events.append(
+                            f"{i}. 📌 {title}\n"
+                            f"   ⏰ 시작: {start_dt_kst.strftime('%Y-%m-%d %H:%M')}\n"
+                            f"   ⏰ 종료: {end_dt_kst.strftime('%Y-%m-%d %H:%M')}\n"
+                            f"   🆔 {event_id}"
+                        )
                     else:
                         # 종료 시간 없음 (시작 시간만)
                         formatted_events.append(

@@ -21,7 +21,7 @@ class DatabaseConfig(BaseSettings):
     """PostgreSQL 데이터베이스 설정"""
 
     postgres_user: str = Field(default="postgres", description="PostgreSQL 사용자명")
-    postgres_password: str = Field(..., description="PostgreSQL 비밀번호 (필수)")
+    postgres_password: Optional[str] = Field(default=None, description="PostgreSQL 비밀번호")
     postgres_db: str = Field(default="manager_g", description="데이터베이스 이름")
     postgres_host: str = Field(default="localhost", description="PostgreSQL 호스트")
     postgres_port: int = Field(default=5432, description="PostgreSQL 포트")
@@ -49,7 +49,7 @@ class QdrantConfig(BaseSettings):
         default="http://localhost:6333",
         description="Qdrant 서버 URL"
     )
-    qdrant_password: str = Field(..., description="Qdrant 비밀번호 (필수)")
+    qdrant_password: Optional[str] = Field(default=None, description="Qdrant 비밀번호 (필수)")
     manager_m_collection: str = Field(
         default="manager_m_memories",
         description="Manager M 컬렉션 이름"
@@ -103,7 +103,7 @@ class EmbeddingConfig(BaseSettings):
 class SmartThingsConfig(BaseSettings):
     """SmartThings IoT 설정 (Manager I용)"""
 
-    smartthings_token: str = Field(..., description="SmartThings API 토큰 (필수)")
+    smartthings_token: Optional[str] = Field(default=None, description="SmartThings API 토큰 (필수)")
     smartthings_living_room_light: Optional[str] = Field(
         default=None,
         description="거실 조명 장치 ID"
@@ -173,8 +173,8 @@ class GoogleCalendarConfig(BaseSettings):
 class APIConfig(BaseSettings):
     """외부 API 키 설정"""
 
-    openai_api_key: str = Field(..., description="OpenAI API Key (필수)")
-    tavily_api_key: str = Field(..., description="Tavily Search API Key (필수)")
+    openai_api_key: Optional[str] = Field(default=None, description="OpenAI API Key")
+    tavily_api_key: Optional[str] = Field(default=None, description="Tavily Search API Key")
 
     model_config = SettingsConfigDict(
         env_file=".env",
@@ -187,8 +187,8 @@ class APIConfig(BaseSettings):
 class LangfuseConfig(BaseSettings):
     """Langfuse Observability 설정"""
 
-    langfuse_secret_key: str = Field(..., description="Langfuse Secret Key (필수)")
-    langfuse_public_key: str = Field(..., description="Langfuse Public Key (필수)")
+    langfuse_secret_key: Optional[str] = Field(default=None, description="Langfuse Secret Key (필수)")
+    langfuse_public_key: Optional[str] = Field(default=None, description="Langfuse Public Key (필수)")
     langfuse_base_url: str = Field(
         default="http://192.168.0.151:3000",
         description="Langfuse 서버 URL (self-hosted)"
