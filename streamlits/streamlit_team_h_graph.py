@@ -257,16 +257,24 @@ def render_approval_ui():
                             edited_args = json.loads(edited_args_json)
                             edited_tool_name = st.session_state.get(f"edit_tool_name_{idx}", tool_name)
 
-                            result = st.session_state.agent.invoke_command(
-                                Command(resume={
-                                    "decisions": [{
+                            # 모든 action_requests에 대해 decisions 생성
+                            # 현재 편집 중인 것은 edit, 나머지는 approve
+                            num_actions = len(action_requests)
+                            decisions = []
+                            for i in range(num_actions):
+                                if i == idx:
+                                    decisions.append({
                                         "type": "edit",
                                         "edited_action": {
                                             "name": edited_tool_name,
                                             "args": edited_args
                                         }
-                                    }]
-                                }),
+                                    })
+                                else:
+                                    decisions.append({"type": "approve"})
+
+                            result = st.session_state.agent.invoke_command(
+                                Command(resume={"decisions": decisions}),
                                 config=config
                             )
 
@@ -315,8 +323,11 @@ def render_approval_ui():
                         target_col = col1 if num_buttons >= 1 else st
                         if target_col.button("✅ 승인", key=f"approve_{idx}", use_container_width=True):
                             try:
+                                # 모든 action_requests에 대해 decisions 생성
+                                num_actions = len(action_requests)
+                                decisions = [{"type": "approve"} for _ in range(num_actions)]
                                 result = st.session_state.agent.invoke_command(
-                                    Command(resume={"decisions": [{"type": "approve"}]}),
+                                    Command(resume={"decisions": decisions}),
                                     config=config
                                 )
 
@@ -355,13 +366,11 @@ def render_approval_ui():
                             reject_reason = st.session_state.get(f"reject_reason_{idx}", "사용자가 거부했습니다")
 
                             try:
+                                # 모든 action_requests에 대해 decisions 생성
+                                num_actions = len(action_requests)
+                                decisions = [{"type": "reject", "message": reject_reason} for _ in range(num_actions)]
                                 result = st.session_state.agent.invoke_command(
-                                    Command(resume={
-                                        "decisions": [{
-                                            "type": "reject",
-                                            "message": reject_reason
-                                        }]
-                                    }),
+                                    Command(resume={"decisions": decisions}),
                                     config=config
                                 )
 
