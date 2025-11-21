@@ -106,7 +106,6 @@ class ManagerI(ManagerBase):
             interrupt_on={
                 # 위험한 작업 - 승인 필요
                 "shutdown_mini_pc": True,
-                # 일반 제어 작업 - 승인 불필요 (빠른 실행)
                 "turn_on_light": False,
                 "turn_off_light": False,
                 "turn_off_speaker": False,
