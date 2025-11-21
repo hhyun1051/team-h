@@ -482,6 +482,11 @@ for msg in st.session_state.messages:
         msg["content"],
         agent_name=msg.get("agent_name")
     )
+    # 로그가 있으면 표시
+    if "logs" in msg and msg["logs"]:
+        with st.expander("📜 과정 로그 보기", expanded=False):
+            for log in msg["logs"]:
+                st.markdown(log)
 
 # 입력
 if prompt := st.chat_input("메시지 입력..."):
@@ -497,23 +502,63 @@ if prompt := st.chat_input("메시지 입력..."):
     with st.spinner("생각 중..."):
         try:
             # 통합 ID 전략: session_id를 thread_id와 session_id 모두로 사용
-            result = st.session_state.agent.invoke(
-                message=prompt,
-                user_id=st.session_state.user_id,
-                thread_id=st.session_state.session_id,  # PostgreSQL thread_id
-                session_id=st.session_state.session_id,  # Langfuse session_id (동일 값)
-            )
-
             config = {"configurable": {"thread_id": st.session_state.session_id}}
+            
+            # 스트리밍을 위한 상태 컨테이너
+            execution_logs = []  # 로그 수집용 리스트
+            
+            with st.status("🤔 생각 중...", expanded=True) as status:
+                # Stream 실행
+                for chunk in st.session_state.agent.stream(
+                    message=prompt,
+                    user_id=st.session_state.user_id,
+                    thread_id=st.session_state.session_id,
+                    session_id=st.session_state.session_id,
+                ):
+                    # 청크 처리 및 로그 표시
+                    for node_name, updates in chunk.items():
+                        # Router 로그
+                        if node_name == "router":
+                            reason = updates.get("routing_reason", "Unknown reason")
+                            target = updates.get("current_agent", "unknown")
+                            log_msg = f"🔄 **Router:** {target.upper()}로 전달 ({reason})"
+                            status.write(log_msg)
+                            execution_logs.append(log_msg)
+                        
+                        # Manager 로그
+                        elif node_name.startswith("manager_"):
+                            agent_key = node_name.replace("manager_", "")
+                            msgs = updates.get("messages", [])
+                            
+                            # 새로 생성된 메시지 중 ToolMessage(핸드오프) 확인
+                            for msg in msgs:
+                                if hasattr(msg, "type") and msg.type == "tool":
+                                    # 핸드오프 메시지
+                                    log_msg = f"🤝 **{agent_key.upper()}:** 핸드오프 실행 - {msg.content}"
+                                    status.write(log_msg)
+                                    execution_logs.append(log_msg)
+                                elif hasattr(msg, "type") and msg.type == "ai" and msg.tool_calls:
+                                    # 툴 호출
+                                    for tool_call in msg.tool_calls:
+                                        log_msg = f"🛠️ **{agent_key.upper()}:** 툴 호출 - `{tool_call['name']}`"
+                                        status.write(log_msg)
+                                        execution_logs.append(log_msg)
+                
+                status.update(label="✅ 완료!", state="complete", expanded=False)
 
-            # Interrupt 확인
-            if "__interrupt__" in result:
-                st.session_state.pending_approval = {
-                    "interrupt": result["__interrupt__"][0],
-                    "config": config,
-                }
-                st.info("⏸️ 승인이 필요합니다")
-                st.rerun()
+            # 최종 상태 가져오기
+            snapshot = st.session_state.agent.graph.get_state(config)
+            result = snapshot.values
+            
+            # Interrupt 확인 (Next가 있으면 interrupt 상태)
+            if snapshot.next:
+                # snapshot.tasks에서 interrupt 추출
+                interrupts = []
+                for task in snapshot.tasks:
+                    interrupts.extend(task.interrupts)
+                
+                if interrupts:
+                    result["__interrupt__"] = interrupts
 
             # 정상 응답
             msg, agent_name = extract_response(result)
@@ -541,6 +586,7 @@ if prompt := st.chat_input("메시지 입력..."):
                 "role": "assistant",
                 "content": msg,
                 "agent_name": agent_name,
+                "logs": execution_logs,  # 로그 저장
             })
 
         except Exception as e:

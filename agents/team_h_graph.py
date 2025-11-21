@@ -631,88 +631,61 @@ class TeamHGraph:
         )
 
     def _manager_i_node(self, state: TeamHState, config: Optional[Dict[str, Any]] = None) -> Command:
-        """Manager I 노드 - 전체 대화 맥락 포함"""
-        print(f"[🏠] Manager I executing...")
+        """Manager I 노드"""
+        return self._execute_manager_node(state, config, self.manager_i, "i")
+
+    def _manager_m_node(self, state: TeamHState, config: Optional[Dict[str, Any]] = None) -> Command:
+        """Manager M 노드 - user_id 주입 및 재귀 제한 설정"""
+        user_id = state.get("user_id", "default_user")
+
+        # 전체 messages를 복사하고, 마지막 user 메시지에 user_id 주입
+        messages = list(state["messages"])
+        if messages and len(messages) > 0:
+            for i in range(len(messages) - 1, -1, -1):
+                msg = messages[i]
+                if isinstance(msg, HumanMessage) or (hasattr(msg, "type") and msg.type == "human"):
+                    messages[i] = HumanMessage(content=f"[User ID: {user_id}]\n{msg.content}")
+                    break
+
+        return self._execute_manager_node(
+            state, config, self.manager_m, "m",
+            messages=messages, recursion_limit=20
+        )
+
+    def _manager_s_node(self, state: TeamHState, config: Optional[Dict[str, Any]] = None) -> Command:
+        """Manager S 노드"""
+        return self._execute_manager_node(state, config, self.manager_s, "s")
+
+    def _manager_t_node(self, state: TeamHState, config: Optional[Dict[str, Any]] = None) -> Command:
+        """Manager T 노드"""
+        return self._execute_manager_node(state, config, self.manager_t, "t")
+
+    def _execute_manager_node(
+        self,
+        state: TeamHState,
+        config: Optional[Dict[str, Any]],
+        manager_instance: Any,
+        manager_key: str,
+        messages: Optional[List] = None,
+        recursion_limit: Optional[int] = None
+    ) -> Command:
+        """Generic manager node execution logic"""
+        icons = {"i": "🏠", "m": "🧠", "s": "🔍", "t": "📅"}
+        icon = icons.get(manager_key, "🤖")
+        print(f"[{icon}] Manager {manager_key.upper()} executing...")
 
         # config에서 callbacks 추출
         callbacks = config.get("callbacks", []) if config else []
         manager_config = {"callbacks": callbacks} if callbacks else {}
+        if recursion_limit:
+            manager_config["recursion_limit"] = recursion_limit
 
-        # 전체 messages를 Manager I의 agent에 직접 전달
-        # Manager agent는 checkpointer를 사용하지 않으므로 thread_id 불필요
-        result = self.manager_i.agent.invoke(
-            {"messages": state["messages"]},
-            config=manager_config
-        )
+        # Messages setup
+        if messages is None:
+            messages = state["messages"]
 
-        # Agent 실행 결과에서 새로 생성된 메시지들 추출
-        # (기존 state 이후에 생성된 모든 메시지: AIMessage with tool_calls, ToolMessage, 최종 AIMessage)
-        original_msg_count = len(state["messages"])
-        new_messages = result["messages"][original_msg_count:]
-
-        # Handoff tool 호출 감지 (새로 생성된 메시지만 검사)
-        handoff_count = state.get("handoff_count", 0)
-        handoff_target = self._detect_handoff(result, original_msg_count)
-
-        # 무한 루프 방지
-        if handoff_count >= self.max_handoffs:
-            print(f"[⚠️] Max handoffs reached ({self.max_handoffs}), ending conversation")
-            next_agent = "end"
-        elif handoff_target:
-            print(f"[🤝] Handoff tool detected: Manager I → Manager {handoff_target.upper()}")
-            next_agent = handoff_target
-        else:
-            # Handoff tool이 호출되지 않았으면 종료
-            next_agent = "end"
-
-        # 다음 노드 결정
-        if next_agent == "end":
-            goto = END
-        else:
-            goto = f"manager_{next_agent}"
-
-        # last_active_manager 업데이트
-        # Handoff가 발생하면 handoff_target으로, 종료 시에는 현재 Manager 유지
-        last_active = next_agent if next_agent != "end" else "i"
-
-        # Command로 반환 - 새로 생성된 모든 메시지 추가 (ToolMessage 포함)
-        return Command(
-            goto=goto,
-            update={
-                "messages": new_messages,  # ✅ AIMessage, ToolMessage 모두 포함
-                "handoff_count": handoff_count + (1 if next_agent != "end" else 0),
-                "current_agent": "i",
-                "last_active_manager": last_active,
-            }
-        )
-
-    def _manager_m_node(self, state: TeamHState, config: Optional[Dict[str, Any]] = None) -> Command:
-        """Manager M 노드 - 전체 대화 맥락 포함"""
-        print(f"[🧠] Manager M executing...")
-
-        user_id = state.get("user_id", "default_user")
-
-        # 전체 messages를 복사하고, 마지막 user 메시지에 user_id 주입
-        messages = list(state["messages"])  # 복사
-        if messages and len(messages) > 0:
-            # 마지막 Human 메시지를 찾아서 user_id 주입
-            for i in range(len(messages) - 1, -1, -1):
-                msg = messages[i]
-                if isinstance(msg, HumanMessage) or (hasattr(msg, "type") and msg.type == "human"):
-                    # user_id를 메시지에 주입 (ManagerM의 _prepare_message와 동일)
-                    messages[i] = HumanMessage(content=f"[User ID: {user_id}]\n{msg.content}")
-                    break
-
-        # config에서 callbacks 추출
-        callbacks = config.get("callbacks", []) if config else []
-        manager_config = {
-            "recursion_limit": 20,  # 재귀 제한을 20으로 설정 (기본값 25)
-            "callbacks": callbacks,
-        }
-
-        # 전체 messages를 Manager M의 agent에 직접 전달
-        # Manager agent는 checkpointer를 사용하지 않으므로 thread_id 불필요
-        result = self.manager_m.agent.invoke(
+        # 전체 messages를 Manager의 agent에 직접 전달
+        result = manager_instance.agent.invoke(
             {"messages": messages},
             config=manager_config
         )
@@ -731,7 +704,7 @@ class TeamHGraph:
             print(f"[⚠️] Max handoffs reached ({self.max_handoffs}), ending conversation")
             next_agent = "end"
         elif handoff_target:
-            print(f"[🤝] Handoff tool detected: Manager M → Manager {handoff_target.upper()}")
+            print(f"[🤝] Handoff tool detected: Manager {manager_key.upper()} → Manager {handoff_target.upper()}")
             next_agent = handoff_target
         else:
             # Handoff tool이 호출되지 않았으면 종료
@@ -745,7 +718,7 @@ class TeamHGraph:
 
         # last_active_manager 업데이트
         # Handoff가 발생하면 handoff_target으로, 종료 시에는 현재 Manager 유지
-        last_active = next_agent if next_agent != "end" else "m"
+        last_active = next_agent if next_agent != "end" else manager_key
 
         # Command로 반환 - 새로 생성된 모든 메시지 추가 (ToolMessage 포함)
         return Command(
@@ -753,119 +726,7 @@ class TeamHGraph:
             update={
                 "messages": new_messages,  # ✅ AIMessage, ToolMessage 모두 포함
                 "handoff_count": handoff_count + (1 if next_agent != "end" else 0),
-                "current_agent": "m",
-                "last_active_manager": last_active,
-            }
-        )
-
-    def _manager_s_node(self, state: TeamHState, config: Optional[Dict[str, Any]] = None) -> Command:
-        """Manager S 노드 - 전체 대화 맥락 포함"""
-        print(f"[🔍] Manager S executing...")
-
-        # config에서 callbacks 추출
-        callbacks = config.get("callbacks", []) if config else []
-        manager_config = {"callbacks": callbacks} if callbacks else {}
-
-        # 전체 messages를 Manager S의 agent에 직접 전달
-        # Manager agent는 checkpointer를 사용하지 않으므로 thread_id 불필요
-        result = self.manager_s.agent.invoke(
-            {"messages": state["messages"]},
-            config=manager_config
-        )
-
-        # Agent 실행 결과에서 새로 생성된 메시지들 추출
-        # (기존 state 이후에 생성된 모든 메시지: AIMessage with tool_calls, ToolMessage, 최종 AIMessage)
-        original_msg_count = len(state["messages"])
-        new_messages = result["messages"][original_msg_count:]
-
-        # Handoff tool 호출 감지 (새로 생성된 메시지만 검사)
-        handoff_count = state.get("handoff_count", 0)
-        handoff_target = self._detect_handoff(result, original_msg_count)
-
-        # 무한 루프 방지
-        if handoff_count >= self.max_handoffs:
-            print(f"[⚠️] Max handoffs reached ({self.max_handoffs}), ending conversation")
-            next_agent = "end"
-        elif handoff_target:
-            print(f"[🤝] Handoff tool detected: Manager S → Manager {handoff_target.upper()}")
-            next_agent = handoff_target
-        else:
-            # Handoff tool이 호출되지 않았으면 종료
-            next_agent = "end"
-
-        # 다음 노드 결정
-        if next_agent == "end":
-            goto = END
-        else:
-            goto = f"manager_{next_agent}"
-
-        # last_active_manager 업데이트
-        # Handoff가 발생하면 handoff_target으로, 종료 시에는 현재 Manager 유지
-        last_active = next_agent if next_agent != "end" else "s"
-
-        # Command로 반환 - 새로 생성된 모든 메시지 추가 (ToolMessage 포함)
-        return Command(
-            goto=goto,
-            update={
-                "messages": new_messages,  # ✅ AIMessage, ToolMessage 모두 포함
-                "handoff_count": handoff_count + (1 if next_agent != "end" else 0),
-                "current_agent": "s",
-                "last_active_manager": last_active,
-            }
-        )
-
-    def _manager_t_node(self, state: TeamHState, config: Optional[Dict[str, Any]] = None) -> Command:
-        """Manager T 노드 - 전체 대화 맥락 포함"""
-        print(f"[📅] Manager T executing...")
-
-        # config에서 callbacks 추출
-        callbacks = config.get("callbacks", []) if config else []
-        manager_config = {"callbacks": callbacks} if callbacks else {}
-
-        # 전체 messages를 Manager T의 agent에 직접 전달
-        # Manager agent는 checkpointer를 사용하지 않으므로 thread_id 불필요
-        result = self.manager_t.agent.invoke(
-            {"messages": state["messages"]},
-            config=manager_config
-        )
-
-        # Agent 실행 결과에서 새로 생성된 메시지들 추출
-        # (기존 state 이후에 생성된 모든 메시지: AIMessage with tool_calls, ToolMessage, 최종 AIMessage)
-        original_msg_count = len(state["messages"])
-        new_messages = result["messages"][original_msg_count:]
-
-        # Handoff tool 호출 감지 (새로 생성된 메시지만 검사)
-        handoff_count = state.get("handoff_count", 0)
-        handoff_target = self._detect_handoff(result, original_msg_count)
-
-        # 무한 루프 방지
-        if handoff_count >= self.max_handoffs:
-            print(f"[⚠️] Max handoffs reached ({self.max_handoffs}), ending conversation")
-            next_agent = "end"
-        elif handoff_target:
-            print(f"[🤝] Handoff tool detected: Manager T → Manager {handoff_target.upper()}")
-            next_agent = handoff_target
-        else:
-            # Handoff tool이 호출되지 않았으면 종료
-            next_agent = "end"
-
-        # 다음 노드 결정
-        if next_agent == "end":
-            goto = END
-        else:
-            goto = f"manager_{next_agent}"
-
-        # last_active_manager 업데이트
-        # Handoff가 발생하면 handoff_target으로, 종료 시에는 현재 Manager 유지
-        last_active = next_agent if next_agent != "end" else "t"
-
-        # Command로 반환 - 새로 생성된 모든 메시지 추가 (ToolMessage 포함)
-        return Command(
-            goto=goto,
-            update={
-                "messages": new_messages,  # ✅ AIMessage, ToolMessage 모두 포함
-                "handoff_count": handoff_count + (1 if next_agent != "end" else 0),
-                "current_agent": "t",
+                "current_agent": manager_key,
                 "last_active_manager": last_active,
             }
         )
