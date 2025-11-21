@@ -147,33 +147,28 @@ class ManagerT(ManagerBase):
 
     def _get_base_prompt(self) -> str:
         """
-        베이스 프롬프트에 현재 날짜/시간 정보 추가
+        베이스 프롬프트 로드
 
-        LLM이 "오늘", "내일" 같은 상대적 시간 표현을 정확히 파싱할 수 있도록
-        현재 KST 시간 정보를 프롬프트에 포함합니다.
+        NOTE: 현재 날짜/시간 정보는 get_current_datetime 툴을 통해 동적으로 제공됩니다.
+        이렇게 하면 에이전트가 캐시되어도 항상 정확한 시간을 얻을 수 있습니다.
         """
         # 부모 클래스의 프롬프트 로드
         base_prompt = super()._get_base_prompt()
 
-        # 현재 KST 시간 정보 추가
-        now_kst = datetime.now(KST)
-        current_time_info = f"""
+        # 현재 시간 정보는 get_current_datetime 툴 사용 안내
+        time_tool_info = """
 
-**CURRENT TIME INFORMATION (KST - Asia/Seoul):**
-- Current Date: {now_kst.strftime('%Y-%m-%d')} ({now_kst.strftime('%A')})
-- Current Time: {now_kst.strftime('%H:%M:%S')}
-- ISO 8601 Format: {now_kst.isoformat()}
+<current-time>
+IMPORTANT: To get the current date and time, you MUST call the get_current_datetime tool FIRST before processing any time-related requests.
+This ensures you always have the accurate current time, not cached information.
 
-IMPORTANT: Always use this current time when parsing relative time expressions:
-- "오늘" (today) = {now_kst.strftime('%Y-%m-%d')}
-- "내일" (tomorrow) = {(now_kst + timedelta(days=1)).strftime('%Y-%m-%d')}
-- "오늘 오후 1시" (today 1pm) = {now_kst.strftime('%Y-%m-%d')}T13:00:00+09:00
-- "내일 아침" (tomorrow morning) = {(now_kst + timedelta(days=1)).strftime('%Y-%m-%d')}T09:00:00+09:00
-
-When creating events, ALWAYS use year {now_kst.year}, not past years!
+When parsing relative time expressions like "오늘", "내일", "다음주":
+1. First call get_current_datetime to get the current date
+2. Then calculate the target date based on the current date
+</current-time>
 """
 
-        return base_prompt + current_time_info
+        return base_prompt + time_tool_info
 
     def _get_calendar_service(self):
         """Google Calendar API 서비스 생성"""
@@ -529,6 +524,33 @@ When creating events, ALWAYS use year {now_kst.year}, not past years!
                 return f"❌ 일정 삭제 중 오류 발생: {str(e)}"
 
         @tool
+        def get_current_datetime() -> str:
+            """
+            Get the current date and time in KST (Korea Standard Time).
+
+            IMPORTANT: Always call this tool FIRST before processing any time-related requests
+            to ensure you have the accurate current time.
+
+            Returns:
+                Current date and time information with examples for relative time parsing
+            """
+            now_kst = datetime.now(KST)
+
+            return f"""📅 현재 시간 정보 (KST - Asia/Seoul):
+- 현재 날짜: {now_kst.strftime('%Y-%m-%d')} ({now_kst.strftime('%A')})
+- 현재 시간: {now_kst.strftime('%H:%M:%S')}
+- ISO 8601: {now_kst.isoformat()}
+
+상대적 시간 표현 해석 기준:
+- "오늘" (today) = {now_kst.strftime('%Y-%m-%d')}
+- "내일" (tomorrow) = {(now_kst + timedelta(days=1)).strftime('%Y-%m-%d')}
+- "모레" (day after tomorrow) = {(now_kst + timedelta(days=2)).strftime('%Y-%m-%d')}
+- "오늘 오후 1시" = {now_kst.strftime('%Y-%m-%d')}T13:00:00+09:00
+- "내일 아침" = {(now_kst + timedelta(days=1)).strftime('%Y-%m-%d')}T09:00:00+09:00
+
+현재 연도: {now_kst.year} (일정 생성 시 반드시 이 연도 사용!)"""
+
+        @tool
         def get_today_events() -> str:
             """
             Get today's calendar events.
@@ -593,6 +615,7 @@ When creating events, ALWAYS use year {now_kst.year}, not past years!
             )
 
         return [
+            get_current_datetime,  # 현재 시간 확인 (항상 먼저 호출)
             create_calendar_event,
             list_calendar_events,
             update_calendar_event,
