@@ -145,30 +145,6 @@ class ManagerT(ManagerBase):
             print(f"[⚠️] Manager T will have limited functionality")
             self.calendar_service = None
 
-    def _get_base_prompt(self) -> str:
-        """
-        베이스 프롬프트 로드
-
-        NOTE: 현재 날짜/시간 정보는 get_current_datetime 툴을 통해 동적으로 제공됩니다.
-        이렇게 하면 에이전트가 캐시되어도 항상 정확한 시간을 얻을 수 있습니다.
-        """
-        # 부모 클래스의 프롬프트 로드
-        base_prompt = super()._get_base_prompt()
-
-        # 현재 시간 정보는 get_current_datetime 툴 사용 안내
-        time_tool_info = """
-
-<current-time>
-IMPORTANT: To get the current date and time, you MUST call the get_current_datetime tool FIRST before processing any time-related requests.
-This ensures you always have the accurate current time, not cached information.
-
-When parsing relative time expressions like "오늘", "내일", "다음주":
-1. First call get_current_datetime to get the current date
-2. Then calculate the target date based on the current date
-</current-time>
-"""
-
-        return base_prompt + time_tool_info
 
     def _get_calendar_service(self):
         """Google Calendar API 서비스 생성"""

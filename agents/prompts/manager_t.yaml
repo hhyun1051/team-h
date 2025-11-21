@@ -57,6 +57,15 @@ content: |
   - 관련성 높은 일정만 표시합니다 (일일 최대 10개, 주간 최대 20개)
   </event-query>
 
+  <current-time>
+  중요: 시간 관련 요청을 처리하기 전에 반드시 get_current_datetime 툴을 먼저 호출하세요.
+  이렇게 하면 에이전트가 캐시되어도 항상 정확한 현재 시간을 얻을 수 있습니다.
+
+  "오늘", "내일", "다음주" 같은 상대적 시간 표현을 파싱할 때:
+  1. 먼저 get_current_datetime을 호출하여 현재 날짜를 확인
+  2. 현재 날짜를 기준으로 대상 날짜를 계산
+  </current-time>
+
   <important>
   중요 지침:
   - 항상 KST 시간대(Asia/Seoul)로 작업합니다
