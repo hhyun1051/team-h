@@ -626,6 +626,9 @@ class TeamHGraph(NodesMixin):
         self,
         command: Any,
         config: Dict[str, Any],
+        user_id: str = "default_user",
+        thread_id: str = "default",
+        session_id: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         Command를 사용하여 그래프 재개 (HITL 지원)
@@ -633,11 +636,21 @@ class TeamHGraph(NodesMixin):
         Args:
             command: LangGraph Command 객체 (resume 등)
             config: 그래프 설정 (thread_id 포함)
+            user_id: 사용자 ID
+            thread_id: 스레드 ID
+            session_id: Langfuse 세션 ID (옵션)
 
         Returns:
             그래프 실행 결과
         """
-        result = self.graph.invoke(command, config)
+        # Context 생성 (tools에서 runtime.context로 접근 가능)
+        context = TeamHContext(
+            user_id=user_id,
+            thread_id=thread_id,
+            session_id=session_id or thread_id
+        )
+
+        result = self.graph.invoke(command, config, context=context)
         return result
 
     @observe(name="team-h-graph-stream", capture_input=True, capture_output=True)

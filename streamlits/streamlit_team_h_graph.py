@@ -275,7 +275,10 @@ def render_approval_ui():
 
                             result = st.session_state.agent.invoke_command(
                                 Command(resume={"decisions": decisions}),
-                                config=config
+                                config=approval_data["config"],
+                                user_id=approval_data["user_id"],
+                                thread_id=approval_data["thread_id"],
+                                session_id=approval_data["session_id"]
                             )
 
                             msg, agent_name = extract_response(result)
@@ -328,7 +331,10 @@ def render_approval_ui():
                                 decisions = [{"type": "approve"} for _ in range(num_actions)]
                                 result = st.session_state.agent.invoke_command(
                                     Command(resume={"decisions": decisions}),
-                                    config=config
+                                    config=approval_data["config"],
+                                    user_id=approval_data["user_id"],
+                                    thread_id=approval_data["thread_id"],
+                                    session_id=approval_data["session_id"]
                                 )
 
                                 msg, agent_name = extract_response(result)
@@ -371,7 +377,10 @@ def render_approval_ui():
                                 decisions = [{"type": "reject", "message": reject_reason} for _ in range(num_actions)]
                                 result = st.session_state.agent.invoke_command(
                                     Command(resume={"decisions": decisions}),
-                                    config=config
+                                    config=approval_data["config"],
+                                    user_id=approval_data["user_id"],
+                                    thread_id=approval_data["thread_id"],
+                                    session_id=approval_data["session_id"]
                                 )
 
                                 msg, agent_name = extract_response(result)
@@ -558,10 +567,13 @@ if prompt := st.chat_input("메시지 입력..."):
                     interrupts.extend(task.interrupts)
 
                 if interrupts:
-                    # HITL 승인 대기 상태로 전환
+                    # HITL 승인 대기 상태로 전환 (context 정보도 함께 저장)
                     st.session_state.pending_approval = {
                         "interrupt": interrupts[0],
-                        "config": config
+                        "config": config,
+                        "user_id": st.session_state.user_id,
+                        "thread_id": st.session_state.session_id,
+                        "session_id": st.session_state.session_id
                     }
                     status.update(label="⏸️ 승인 대기 중", state="running", expanded=False)
                     st.rerun()  # UI를 즉시 갱신하여 승인 UI 표시
