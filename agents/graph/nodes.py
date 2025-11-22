@@ -63,21 +63,10 @@ class NodesMixin:
         return self._execute_manager_node(state, config, self.manager_i, "i")
 
     def _manager_m_node(self, state: TeamHState, config: Optional[Dict[str, Any]] = None) -> Command:
-        """Manager M 노드 - user_id 주입 및 재귀 제한 설정"""
-        user_id = state.get("user_id", "default_user")
-
-        # 전체 messages를 복사하고, 마지막 user 메시지에 user_id 주입
-        messages = list(state["messages"])
-        if messages and len(messages) > 0:
-            for i in range(len(messages) - 1, -1, -1):
-                msg = messages[i]
-                if isinstance(msg, HumanMessage) or (hasattr(msg, "type") and msg.type == "human"):
-                    messages[i] = HumanMessage(content=f"[User ID: {user_id}]\n{msg.content}")
-                    break
-
+        """Manager M 노드 - 재귀 제한 설정 (user_id는 context로 전달됨)"""
         return self._execute_manager_node(
             state, config, self.manager_m, "m",
-            messages=messages, recursion_limit=20
+            recursion_limit=20
         )
 
     def _manager_s_node(self, state: TeamHState, config: Optional[Dict[str, Any]] = None) -> Command:

@@ -25,8 +25,9 @@ sys.path.insert(0, str(project_root))
 
 # Agents import (__init__.py 활용)
 from agents import ManagerBase
+from agents.context import TeamHContext
 from langchain.agents.middleware import HumanInTheLoopMiddleware
-from langchain.tools import tool
+from langchain.tools import tool, ToolRuntime
 
 # SmartThings API (pysmartthings 사용)
 try:
@@ -189,12 +190,15 @@ class ManagerI(ManagerBase):
         """IoT 제어 관련 툴 생성"""
 
         @tool
-        def shutdown_mini_pc() -> str:
+        def shutdown_mini_pc(runtime: ToolRuntime[TeamHContext] = None) -> str:
             """
             Shutdown the mini PC (Linux system).
 
             This is a DANGEROUS operation that will turn off the mini PC.
             Use this only when explicitly requested by the user.
+
+            Args:
+                runtime: Automatically injected runtime context
 
             Returns:
                 Confirmation message about shutdown
@@ -219,7 +223,7 @@ class ManagerI(ManagerBase):
                 return f"❌ Error shutting down mini PC: {str(e)}"
 
         @tool
-        def turn_on_light(room: str) -> str:
+        def turn_on_light(room: str, runtime: ToolRuntime[TeamHContext] = None) -> str:
             """
             Turn on the light in a specified room.
 
@@ -228,6 +232,7 @@ class ManagerI(ManagerBase):
                     - living_room, 거실, 프로젝터 → living room light
                     - bedroom, 안방, 세로모니터, 서브모니터 → bedroom light
                     - bathroom, 화장실, 공기청정기, 큐브 → bathroom light
+                runtime: Automatically injected runtime context
 
             Returns:
                 Status message about the light operation
@@ -235,7 +240,7 @@ class ManagerI(ManagerBase):
             return self._control_light(room, "on")
 
         @tool
-        def turn_off_light(room: str) -> str:
+        def turn_off_light(room: str, runtime: ToolRuntime[TeamHContext] = None) -> str:
             """
             Turn off the light in a specified room.
 
@@ -244,6 +249,7 @@ class ManagerI(ManagerBase):
                     - living_room, 거실, 프로젝터 → living room light
                     - bedroom, 안방, 세로모니터, 서브모니터 → bedroom light
                     - bathroom, 화장실, 공기청정기, 큐브 → bathroom light
+                runtime: Automatically injected runtime context
 
             Returns:
                 Status message about the light operation
@@ -251,11 +257,14 @@ class ManagerI(ManagerBase):
             return self._control_light(room, "off")
 
         @tool
-        def turn_on_speaker() -> str:
+        def turn_on_speaker(runtime: ToolRuntime[TeamHContext] = None) -> str:
             """
             Turn on the living room speaker via smart outlet.
 
             The speaker is connected to a smart plug that can be controlled remotely.
+
+            Args:
+                runtime: Automatically injected runtime context
 
             Returns:
                 Status message about the speaker operation
@@ -274,11 +283,14 @@ class ManagerI(ManagerBase):
                 return f"❌ Error turning on speaker: {str(e)}"
 
         @tool
-        def turn_off_speaker() -> str:
+        def turn_off_speaker(runtime: ToolRuntime[TeamHContext] = None) -> str:
             """
             Turn off the living room speaker via smart outlet.
 
             The speaker is connected to a smart plug that can be controlled remotely.
+
+            Args:
+                runtime: Automatically injected runtime context
 
             Returns:
                 Status message about the speaker operation
@@ -297,9 +309,12 @@ class ManagerI(ManagerBase):
                 return f"❌ Error turning off speaker: {str(e)}"
 
         @tool
-        def get_device_status(room: str, device_type: str = "light") -> str:
+        def get_device_status(room: str, device_type: str = "light", runtime: ToolRuntime[TeamHContext] = None) -> str:
             """
             Get the current status of a device in a specified room.
+
+            Args:
+                runtime: Automatically injected runtime context
 
             Args:
                 room: Room name. Supports both English and Korean:

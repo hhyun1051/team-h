@@ -26,8 +26,9 @@ sys.path.insert(0, str(project_root))
 
 # Agents import (__init__.py 활용)
 from agents import ManagerBase
+from agents.context import TeamHContext
 from langchain.agents.middleware import HumanInTheLoopMiddleware
-from langchain.tools import tool
+from langchain.tools import tool, ToolRuntime
 from pydantic import BaseModel, Field
 
 # Google Calendar API
@@ -274,13 +275,15 @@ class ManagerT(ManagerBase):
             end_time: Optional[str] = None,
             description: Optional[str] = "",
             location: Optional[str] = "",
-            reminders_minutes: Optional[List[int]] = None
+            reminders_minutes: Optional[List[int]] = None,
+            runtime: ToolRuntime[TeamHContext] = None
         ) -> str:
             """
             Create a new event in Google Calendar.
 
             Args:
                 title: Event title (e.g., "빨래하기")
+                runtime: Automatically injected runtime context
                 start_time: Start time in ISO 8601 format (e.g., "2025-11-15T09:00:00+09:00")
                 end_time: End time (optional, defaults to start_time + 1 hour)
                 description: Event description
@@ -382,7 +385,7 @@ class ManagerT(ManagerBase):
             start_date: str,
             end_date: str,
             max_results: int = 10
-        ) -> str:
+        , runtime: ToolRuntime[TeamHContext] = None) -> str:
             """
             List calendar events within a date range.
 
@@ -403,7 +406,7 @@ class ManagerT(ManagerBase):
             start_time: Optional[str] = None,
             end_time: Optional[str] = None,
             description: Optional[str] = None
-        ) -> str:
+        , runtime: ToolRuntime[TeamHContext] = None) -> str:
             """
             Update an existing calendar event.
 
@@ -467,7 +470,7 @@ class ManagerT(ManagerBase):
                 return f"❌ 일정 수정 중 오류 발생: {str(e)}"
 
         @tool
-        def delete_calendar_event(event_id: str) -> str:
+        def delete_calendar_event(event_id: str, runtime: ToolRuntime[TeamHContext] = None) -> str:
             """
             Delete a calendar event.
 
@@ -500,7 +503,7 @@ class ManagerT(ManagerBase):
                 return f"❌ 일정 삭제 중 오류 발생: {str(e)}"
 
         @tool
-        def get_current_datetime() -> str:
+        def get_current_datetime(runtime: ToolRuntime[TeamHContext] = None) -> str:
             """
             Get the current date and time in KST (Korea Standard Time).
 
@@ -527,7 +530,7 @@ class ManagerT(ManagerBase):
 현재 연도: {now_kst.year} (일정 생성 시 반드시 이 연도 사용!)"""
 
         @tool
-        def get_today_events() -> str:
+        def get_today_events(runtime: ToolRuntime[TeamHContext] = None) -> str:
             """
             Get today's calendar events.
 
@@ -550,7 +553,7 @@ class ManagerT(ManagerBase):
             )
 
         @tool
-        def get_tomorrow_events() -> str:
+        def get_tomorrow_events(runtime: ToolRuntime[TeamHContext] = None) -> str:
             """
             Get tomorrow's calendar events.
 
@@ -570,7 +573,7 @@ class ManagerT(ManagerBase):
             )
 
         @tool
-        def get_week_events() -> str:
+        def get_week_events(runtime: ToolRuntime[TeamHContext] = None) -> str:
             """
             Get this week's calendar events.
 

@@ -23,8 +23,9 @@ sys.path.insert(0, str(project_root))
 
 # Agents import (__init__.py 활용)
 from agents import ManagerBase
+from agents.context import TeamHContext
 from langchain.agents.middleware import HumanInTheLoopMiddleware
-from langchain.tools import tool
+from langchain.tools import tool, ToolRuntime
 from database.qdrant.manager_m_memory import ManagerMMemory
 
 
@@ -110,28 +111,30 @@ class ManagerM(ManagerBase):
             collection_name=kwargs.get("collection_name"),
         )
 
-    def _prepare_message(self, message: str, **kwargs) -> str:
-        """user_id를 메시지에 주입"""
-        user_id = kwargs.get("user_id", "default_user")
-        return f"[User ID: {user_id}]\n{message}"
-
     def _create_tools(self) -> List:
-        """메모리 관리 관련 툴 생성"""
+        """메모리 관리 관련 툴 생성 (ToolRuntime 사용)"""
 
         @tool
-        def add_memory(content: str, memory_type: str = "general", user_id: str = "default_user") -> str:
+        def add_memory(
+            content: str,
+            memory_type: str = "general",
+            runtime: ToolRuntime[TeamHContext] = None
+        ) -> str:
             """
             Add a new memory to the system.
 
             Args:
                 content: The content of the memory to add
                 memory_type: Type of memory (general, preference, habit, interaction, etc.)
-                user_id: User ID for the memory (extracted from message context)
+                runtime: Automatically injected runtime context (contains user_id)
 
             Returns:
                 Confirmation message with the memory ID
             """
             try:
+                # Runtime context에서 user_id 안전하게 가져옴
+                user_id = runtime.context.user_id if runtime else "default_user"
+
                 result = self.memory.add_memory(
                     content=content,
                     memory_type=memory_type,
@@ -142,19 +145,25 @@ class ManagerM(ManagerBase):
                 return f"❌ Error adding memory: {str(e)}"
 
         @tool
-        def search_memories(query: str, user_id: str = "default_user", limit: int = 5) -> str:
+        def search_memories(
+            query: str,
+            limit: int = 5,
+            runtime: ToolRuntime[TeamHContext] = None
+        ) -> str:
             """
             Search for memories related to the query.
 
             Args:
                 query: Search query string
-                user_id: User ID to search memories for
                 limit: Maximum number of results to return
+                runtime: Automatically injected runtime context (contains user_id)
 
             Returns:
                 List of relevant memories
             """
             try:
+                user_id = runtime.context.user_id if runtime else "default_user"
+
                 results = self.memory.search_memories(
                     query=query,
                     user_id=user_id,
@@ -185,18 +194,23 @@ class ManagerM(ManagerBase):
                 return f"❌ Error searching memories: {str(e)}"
 
         @tool
-        def get_all_memories(user_id: str = "default_user", limit: int = 10) -> str:
+        def get_all_memories(
+            limit: int = 10,
+            runtime: ToolRuntime[TeamHContext] = None
+        ) -> str:
             """
             Get all memories for a user.
 
             Args:
-                user_id: User ID to get memories for
                 limit: Maximum number of memories to return
+                runtime: Automatically injected runtime context (contains user_id)
 
             Returns:
                 List of all user's memories
             """
             try:
+                user_id = runtime.context.user_id if runtime else "default_user"
+
                 results = self.memory.get_all_memories(
                     user_id=user_id,
                     limit=limit,
@@ -224,19 +238,25 @@ class ManagerM(ManagerBase):
                 return f"❌ Error getting memories: {str(e)}"
 
         @tool
-        def update_memory(memory_id: str, content: str, user_id: str = "default_user") -> str:
+        def update_memory(
+            memory_id: str,
+            content: str,
+            runtime: ToolRuntime[TeamHContext] = None
+        ) -> str:
             """
             Update an existing memory.
 
             Args:
                 memory_id: ID of the memory to update
                 content: New content for the memory
-                user_id: User ID (for verification)
+                runtime: Automatically injected runtime context (contains user_id)
 
             Returns:
                 Confirmation message
             """
             try:
+                user_id = runtime.context.user_id if runtime else "default_user"
+
                 result = self.memory.update_memory(
                     memory_id=memory_id,
                     content=content,
@@ -247,18 +267,23 @@ class ManagerM(ManagerBase):
                 return f"❌ Error updating memory: {str(e)}"
 
         @tool
-        def delete_memory(memory_id: str, user_id: str = "default_user") -> str:
+        def delete_memory(
+            memory_id: str,
+            runtime: ToolRuntime[TeamHContext] = None
+        ) -> str:
             """
             Delete a specific memory.
 
             Args:
                 memory_id: ID of the memory to delete
-                user_id: User ID (for verification)
+                runtime: Automatically injected runtime context (contains user_id)
 
             Returns:
                 Confirmation message
             """
             try:
+                user_id = runtime.context.user_id if runtime else "default_user"
+
                 result = self.memory.delete_memory(
                     memory_id=memory_id,
                     user_id=user_id,
@@ -268,19 +293,21 @@ class ManagerM(ManagerBase):
                 return f"❌ Error deleting memory: {str(e)}"
 
         @tool
-        def delete_all_memories(user_id: str = "default_user") -> str:
+        def delete_all_memories(runtime: ToolRuntime[TeamHContext] = None) -> str:
             """
             Delete all memories for a user.
 
             ⚠️ WARNING: This is a destructive operation!
 
             Args:
-                user_id: User ID whose memories to delete
+                runtime: Automatically injected runtime context (contains user_id)
 
             Returns:
                 Confirmation message
             """
             try:
+                user_id = runtime.context.user_id if runtime else "default_user"
+
                 result = self.memory.delete_all_memories(user_id=user_id)
                 return f"✅ All memories deleted for user {user_id}: {result}"
             except Exception as e:

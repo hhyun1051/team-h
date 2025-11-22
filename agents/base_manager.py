@@ -17,6 +17,9 @@ from pathlib import Path
 from langchain.agents import create_agent
 from langchain.chat_models import init_chat_model
 
+# TeamHContext import
+from agents.context import TeamHContext
+
 
 class ManagerBase(ABC):
     """모든 매니저 에이전트의 베이스 클래스"""
@@ -24,12 +27,16 @@ class ManagerBase(ABC):
     # 프롬프트 디렉토리 경로
     PROMPTS_DIR = Path(__file__).parent / "prompts"
 
+    # 기본 Context Schema (자식 클래스에서 오버라이드 가능)
+    CONTEXT_SCHEMA = TeamHContext
+
     def __init__(
         self,
         model_name: str = "gpt-4o-mini",
         temperature: float = 0.7,
         additional_tools: Optional[List] = None,
         middleware: Optional[List] = None,
+        context_schema: Optional[type] = None,
         **kwargs,
     ):
         """
@@ -40,6 +47,7 @@ class ManagerBase(ABC):
             temperature: 모델 temperature 설정
             additional_tools: 핸드오프 등 추가 툴 리스트
             middleware: 에이전트 미들웨어 리스트 (예: HumanInTheLoopMiddleware)
+            context_schema: Runtime context 스키마 (기본값: TeamHContext)
             **kwargs: 자식 클래스의 특수 파라미터
         """
         manager_type = self.__class__.__name__
@@ -87,6 +95,7 @@ class ManagerBase(ABC):
             "model": model,
             "tools": self.tools,
             "system_prompt": system_prompt,
+            "context_schema": context_schema or self.CONTEXT_SCHEMA,
         }
 
         # 미들웨어가 있으면 추가

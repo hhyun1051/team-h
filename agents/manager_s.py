@@ -21,7 +21,8 @@ sys.path.insert(0, str(project_root))
 
 # Agents import (__init__.py 활용)
 from agents import ManagerBase
-from langchain.tools import tool
+from agents.context import TeamHContext
+from langchain.tools import tool, ToolRuntime
 
 # Tavily Search
 try:
@@ -77,13 +78,14 @@ class ManagerS(ManagerBase):
         """검색 관련 툴 생성"""
 
         @tool
-        def search_web(query: str, max_results: Optional[int] = None) -> str:
+        def search_web(query: str, max_results: Optional[int] = None, runtime: ToolRuntime[TeamHContext] = None) -> str:
             """
             Search the web for information using Tavily Search API.
 
             Args:
                 query: Search query string
                 max_results: Maximum number of results to return (default: uses agent's max_results)
+                runtime: Automatically injected runtime context
 
             Returns:
                 Formatted search results with titles, URLs, and snippets
@@ -123,13 +125,14 @@ class ManagerS(ManagerBase):
                 return f"❌ Error during web search: {str(e)}"
 
         @tool
-        def search_news(query: str, max_results: Optional[int] = None) -> str:
+        def search_news(query: str, max_results: Optional[int] = None, runtime: ToolRuntime[TeamHContext] = None) -> str:
             """
             Search for news articles using Tavily Search API.
 
             Args:
                 query: News search query string
                 max_results: Maximum number of results to return (default: uses agent's max_results)
+                runtime: Automatically injected runtime context
 
             Returns:
                 Formatted news results with titles, URLs, and snippets

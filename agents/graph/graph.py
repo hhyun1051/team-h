@@ -33,6 +33,7 @@ from langfuse.langchain import CallbackHandler
 
 # Agents import
 from agents import ManagerI, ManagerM, ManagerS, ManagerT
+from agents.context import TeamHContext
 from agents.middlewares import LangfuseToolLoggingMiddleware, ToolErrorHandlerMiddleware
 
 # Local imports
@@ -596,6 +597,13 @@ class TeamHGraph(NodesMixin):
                 print(f"[⚠️] Failed to create Langfuse handler: {e}")
                 callbacks = []
 
+        # Context 생성 (TeamHContext)
+        context = TeamHContext(
+            user_id=user_id,
+            thread_id=thread_id,
+            session_id=session_id
+        )
+
         config = {
             "configurable": {"thread_id": thread_id},
             "callbacks": callbacks or [],
@@ -608,11 +616,10 @@ class TeamHGraph(NodesMixin):
 
         initial_state = {
             "messages": [HumanMessage(content=message)],
-            "user_id": user_id,
             "handoff_count": 0,
         }
 
-        result = self.graph.invoke(initial_state, config)
+        result = self.graph.invoke(initial_state, config, context=context)
         return result
 
     def invoke_command(
@@ -669,6 +676,13 @@ class TeamHGraph(NodesMixin):
                 print(f"[⚠️] Failed to create Langfuse handler: {e}")
                 callbacks = []
 
+        # Context 생성 (TeamHContext)
+        context = TeamHContext(
+            user_id=user_id,
+            thread_id=thread_id,
+            session_id=session_id
+        )
+
         config = {
             "configurable": {"thread_id": thread_id},
             "callbacks": callbacks or [],
@@ -681,11 +695,10 @@ class TeamHGraph(NodesMixin):
 
         initial_state = {
             "messages": [HumanMessage(content=message)],
-            "user_id": user_id,
             "handoff_count": 0,
         }
 
-        for chunk in self.graph.stream(initial_state, config):
+        for chunk in self.graph.stream(initial_state, config, context=context):
             yield chunk
 
     def get_graph_visualization(self) -> str:
