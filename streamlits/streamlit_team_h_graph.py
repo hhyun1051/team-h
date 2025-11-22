@@ -20,7 +20,7 @@ load_dotenv(project_root / ".env")
 
 # Agents import
 try:
-    from agents.team_h_graph import TeamHGraph
+    from agents.graph import TeamHGraph
     from langchain_core.messages import AIMessage
     from langgraph.types import Command
 except ImportError as e:
