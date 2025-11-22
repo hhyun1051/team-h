@@ -549,18 +549,24 @@ if prompt := st.chat_input("메시지 입력..."):
             # 최종 상태 가져오기
             snapshot = st.session_state.agent.graph.get_state(config)
             result = snapshot.values
-            
+
             # Interrupt 확인 (Next가 있으면 interrupt 상태)
             if snapshot.next:
                 # snapshot.tasks에서 interrupt 추출
                 interrupts = []
                 for task in snapshot.tasks:
                     interrupts.extend(task.interrupts)
-                
-                if interrupts:
-                    result["__interrupt__"] = interrupts
 
-            # 정상 응답
+                if interrupts:
+                    # HITL 승인 대기 상태로 전환
+                    st.session_state.pending_approval = {
+                        "interrupt": interrupts[0],
+                        "config": config
+                    }
+                    status.update(label="⏸️ 승인 대기 중", state="running", expanded=False)
+                    st.rerun()  # UI를 즉시 갱신하여 승인 UI 표시
+
+            # 정상 응답 (interrupt가 없을 때만 실행됨)
             msg, agent_name = extract_response(result)
             active = result.get("active_agent")
 
