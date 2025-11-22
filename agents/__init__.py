@@ -15,7 +15,7 @@ from agents.manager_t import ManagerT
 
 # TeamHGraph는 선택적으로 import (의존성 문제 방지)
 try:
-    from agents.team_h_graph import TeamHGraph
+    from agents.graph import TeamHGraph
     __all__ = [
         "ManagerBase",
         "ManagerI",
