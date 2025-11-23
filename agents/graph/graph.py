@@ -34,7 +34,7 @@ from langfuse.langchain import CallbackHandler
 # Agents import
 from agents import ManagerI, ManagerM, ManagerS, ManagerT
 from agents.context import TeamHContext
-from agents.middlewares import LangfuseToolLoggingMiddleware, ToolErrorHandlerMiddleware
+from agents.middleware import LangfuseToolLoggingMiddleware, ToolErrorHandlerMiddleware
 
 # Local imports
 from .state import TeamHState, AgentRouting

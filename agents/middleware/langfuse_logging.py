@@ -28,7 +28,7 @@ class LangfuseToolLoggingMiddleware(AgentMiddleware):
 
     Example:
         ```python
-        from agents.middlewares import LangfuseToolLoggingMiddleware
+        from agents.middleware import LangfuseToolLoggingMiddleware
         from langchain.agents import create_agent
 
         # 기본 설정으로 사용

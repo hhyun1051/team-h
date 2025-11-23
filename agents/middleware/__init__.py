@@ -1,5 +1,5 @@
 """
-Agent Middlewares Package
+Agent Middleware Package
 
 확장 가능한 middleware 컬렉션:
 - Langfuse 로깅 middleware
@@ -7,7 +7,7 @@ Agent Middlewares Package
 - 추후 추가될 middleware들을 위한 모듈형 구조
 
 Usage:
-    from agents.middlewares import LangfuseToolLoggingMiddleware, ToolErrorHandlerMiddleware
+    from agents.middleware import LangfuseToolLoggingMiddleware, ToolErrorHandlerMiddleware
 
     # 직접 조합하여 사용
     middlewares = [

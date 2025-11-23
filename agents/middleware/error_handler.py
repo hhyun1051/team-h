@@ -24,7 +24,7 @@ class ToolErrorHandlerMiddleware(AgentMiddleware):
 
     Example:
         ```python
-        from agents.middlewares import ToolErrorHandlerMiddleware
+        from agents.middleware import ToolErrorHandlerMiddleware
 
         # 기본 설정으로 사용
         error_handler = ToolErrorHandlerMiddleware()
