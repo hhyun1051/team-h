@@ -16,10 +16,7 @@ from typing import Optional, List, Dict, Any
 from pathlib import Path
 from langchain.agents import create_agent
 from langchain.chat_models import init_chat_model
-
-# TeamHContext import
 from agents.context import TeamHContext
-
 
 class ManagerBase(ABC):
     """모든 매니저 에이전트의 베이스 클래스"""

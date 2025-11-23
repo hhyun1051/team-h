@@ -12,11 +12,6 @@ import sys
 from pathlib import Path
 from typing import Optional, Dict, Any, List
 import os
-
-# 프로젝트 루트 경로 추가
-# project_root = Path(__file__).parent.parent.parent
-# sys.path.insert(0, str(project_root))
-
 from langgraph.graph import StateGraph
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.checkpoint.postgres import PostgresSaver
