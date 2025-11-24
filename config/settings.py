@@ -202,6 +202,30 @@ class LangfuseConfig(BaseSettings):
     )
 
 
+class AuthConfig(BaseSettings):
+    """Streamlit 인증 설정"""
+
+    streamlit_auth_enabled: bool = Field(
+        default=False,
+        description="Streamlit 인증 활성화 여부"
+    )
+    streamlit_auth_password: Optional[str] = Field(
+        default=None,
+        description="Streamlit 인증 비밀번호"
+    )
+    streamlit_auth_expiry_days: int = Field(
+        default=365,
+        description="인증 유효 기간 (일)"
+    )
+
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        case_sensitive=False,
+        extra="ignore"
+    )
+
+
 class Settings:
     """
     통합 설정 클래스
@@ -218,6 +242,7 @@ class Settings:
         self.smartthings = SmartThingsConfig()
         self.google_calendar = GoogleCalendarConfig()
         self.langfuse = LangfuseConfig()
+        self.auth = AuthConfig()
 
     def validate_all(self) -> bool:
         """모든 설정 검증"""
@@ -263,6 +288,12 @@ class Settings:
         print(f"  Secret Key: {'*' * 20}...{self.langfuse.langfuse_secret_key[-4:]}")
         print(f"  Base URL: {self.langfuse.langfuse_base_url}")
 
+        print("\n[Auth]")
+        print(f"  Enabled: {self.auth.streamlit_auth_enabled}")
+        if self.auth.streamlit_auth_password:
+            print(f"  Password: {'*' * 20}")
+        print(f"  Expiry Days: {self.auth.streamlit_auth_expiry_days}")
+
         print("=" * 60)
 
 
@@ -278,6 +309,7 @@ embedding_config = settings.embedding
 smartthings_config = settings.smartthings
 google_calendar_config = settings.google_calendar
 langfuse_config = settings.langfuse
+auth_config = settings.auth
 
 
 if __name__ == "__main__":

@@ -11,6 +11,7 @@ from typing import Dict, Any, Optional
 from dotenv import load_dotenv
 import json
 import uuid
+from openai import OpenAI
 
 project_root = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(project_root))
@@ -42,12 +43,15 @@ from streamlits.components import (
     create_session_state_defaults,
     render_error_expander,
     create_cached_agent,
+    render_audio_input_widget,
 )
 from streamlits.config import (
     PAGE_CONFIGS,
     DEFAULT_VALUES,
     get_env_defaults,
 )
+from streamlits.auth import simple_auth, show_auth_status
+from config.settings import auth_config
 
 # 페이지 설정
 page_config = PAGE_CONFIGS["team_h"]
@@ -56,6 +60,18 @@ st.set_page_config(
     page_icon=page_config["page_icon"],
     layout=page_config["layout"]
 )
+
+# ============================================================================
+# 기기 인증 (외부 접속 보호)
+# ============================================================================
+# .env 파일에서 STREAMLIT_AUTH_ENABLED=true로 설정하면 활성화
+# STREAMLIT_AUTH_PASSWORD에 비밀번호 설정
+if auth_config.streamlit_auth_enabled and auth_config.streamlit_auth_password:
+    if not simple_auth(
+        password=auth_config.streamlit_auth_password,
+        expiry_days=auth_config.streamlit_auth_expiry_days
+    ):
+        st.stop()
 
 st.title(page_config["title"])
 st.caption(page_config["caption"])
@@ -416,6 +432,11 @@ initialize_session_state()
 with st.sidebar:
     st.header("⚙️ 설정")
 
+    # 인증 상태 표시
+    if auth_config.streamlit_auth_enabled:
+        show_auth_status()
+        st.divider()
+
     # 세션 정보
     st.info(f"""
 **📊 세션 정보**
@@ -497,8 +518,29 @@ for msg in st.session_state.messages:
             for log in msg["logs"]:
                 st.markdown(log)
 
-# 입력
-if prompt := st.chat_input("메시지 입력..."):
+# 입력 방식 선택
+input_mode = st.radio(
+    "입력 방식 선택",
+    ["💬 텍스트", "🎤 음성"],
+    horizontal=True,
+    label_visibility="collapsed"
+)
+
+# 입력 처리
+prompt = None
+
+if input_mode == "💬 텍스트":
+    # 텍스트 입력
+    prompt = st.chat_input("메시지 입력...")
+else:
+    # 음성 입력
+    st.caption("🎤 녹음 버튼을 눌러 음성을 입력하세요")
+    audio_text = render_audio_input_widget("main_chat")
+    if audio_text:
+        prompt = audio_text
+
+# 입력이 있을 때 처리
+if prompt:
     if st.session_state.agent is None:
         st.error("❌ 에이전트 초기화에 실패했습니다. 사이드바에서 '에이전트 재시작' 버튼을 눌러주세요.")
         st.stop()

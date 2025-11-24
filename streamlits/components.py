@@ -16,6 +16,9 @@ Streamlit 공통 컴포넌트 - 중복 코드 제거
 import streamlit as st
 from typing import Dict, Any, Optional
 from langchain_core.messages import AIMessage
+from openai import OpenAI
+import tempfile
+import os
 
 
 # 에이전트별 아바타 매핑 (순수 이모지만 사용)
@@ -480,3 +483,130 @@ def clear_agent_cache():
     """
     st.cache_resource.clear()
     print("[🗑️] All cached agents cleared")
+
+
+# ============================================================================
+# STT (Speech-to-Text) 기능
+# ============================================================================
+
+def transcribe_audio(audio_bytes: bytes, language: str = "ko") -> Optional[str]:
+    """
+    OpenAI Whisper API를 사용하여 음성을 텍스트로 변환
+
+    Args:
+        audio_bytes: 오디오 파일 바이트
+        language: 언어 코드 (기본값: "ko" 한국어)
+
+    Returns:
+        변환된 텍스트 또는 None
+
+    Example:
+        >>> audio_data = st.audio_input("음성 입력")
+        >>> if audio_data:
+        >>>     text = transcribe_audio(audio_data.getvalue())
+        >>>     st.write(f"변환된 텍스트: {text}")
+    """
+    tmp_file_path = None
+    try:
+        from config.settings import api_config
+
+        if not api_config.openai_api_key:
+            st.error("❌ OpenAI API Key가 설정되지 않았습니다.")
+            return None
+
+        print(f"[🎤] Starting audio transcription, size: {len(audio_bytes)} bytes")
+
+        client = OpenAI(api_key=api_config.openai_api_key)
+
+        # 임시 파일로 저장 (Whisper API는 파일 객체 필요)
+        # st.audio_input은 webm 포맷으로 녹음하므로 확장자를 .webm으로 변경
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".webm") as tmp_file:
+            tmp_file.write(audio_bytes)
+            tmp_file_path = tmp_file.name
+            print(f"[💾] Saved audio to temporary file: {tmp_file_path}")
+
+        # Whisper API 호출
+        print(f"[🔄] Calling Whisper API...")
+        with open(tmp_file_path, "rb") as audio_file:
+            transcript = client.audio.transcriptions.create(
+                model="whisper-1",
+                file=audio_file,
+                language=language
+            )
+
+        print(f"[✅] Transcription successful: {transcript.text}")
+
+        # 임시 파일 삭제
+        if tmp_file_path and os.path.exists(tmp_file_path):
+            os.unlink(tmp_file_path)
+            print(f"[🗑️] Deleted temporary file")
+
+        return transcript.text
+
+    except Exception as e:
+        st.error(f"❌ 음성 변환 오류: {e}")
+        print(f"[❌] Transcription error: {e}")
+        import traceback
+        error_trace = traceback.format_exc()
+        print(error_trace)
+
+        with st.expander("🐛 상세 에러 정보", expanded=True):
+            st.code(error_trace)
+
+        # 임시 파일 정리
+        if tmp_file_path and os.path.exists(tmp_file_path):
+            try:
+                os.unlink(tmp_file_path)
+            except:
+                pass
+
+        return None
+
+
+def render_audio_input_widget(key_prefix: str = "audio") -> Optional[str]:
+    """
+    음성 입력 위젯 렌더링 및 STT 처리
+
+    Args:
+        key_prefix: 위젯 key 접두사 (충돌 방지)
+
+    Returns:
+        변환된 텍스트 또는 None
+
+    Example:
+        >>> text = render_audio_input_widget("main")
+        >>> if text:
+        >>>     st.write(f"음성 입력: {text}")
+    """
+    try:
+        audio_data = st.audio_input(
+            "🎤 음성 입력",
+            key=f"{key_prefix}_audio_input"
+        )
+
+        if audio_data:
+            # 오디오 데이터 크기 확인
+            audio_bytes = audio_data.getvalue()
+            st.info(f"📊 녹음된 오디오 크기: {len(audio_bytes)} bytes")
+
+            if len(audio_bytes) == 0:
+                st.warning("⚠️ 녹음된 오디오가 비어있습니다.")
+                return None
+
+            with st.spinner("음성을 텍스트로 변환 중..."):
+                text = transcribe_audio(audio_bytes)
+
+                if text:
+                    st.success(f"✅ 변환 완료: {text}")
+                    return text
+                else:
+                    st.error("❌ 음성 변환 실패")
+                    return None
+
+        return None
+    except Exception as e:
+        st.error(f"❌ 음성 입력 위젯 오류: {e}")
+        import traceback
+        with st.expander("상세 에러 정보"):
+            st.code(traceback.format_exc())
+        return None
