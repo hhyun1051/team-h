@@ -99,26 +99,16 @@ class EmbeddingConfig(BaseSettings):
             else self.fastapi_embedding_dims
         )
 
+class HomeAssistantConfig(BaseSettings):
+    """Home Assistant API 설정 (Manager I용)"""
 
-class SmartThingsConfig(BaseSettings):
-    """SmartThings IoT 설정 (Manager I용)"""
-
-    smartthings_token: Optional[str] = Field(default=None, description="SmartThings API 토큰 (필수)")
-    smartthings_living_room_light: Optional[str] = Field(
-        default=None,
-        description="거실 조명 장치 ID"
+    homeassistant_url: str = Field(
+        default="http://localhost:8124",
+        description="Home Assistant URL"
     )
-    smartthings_bedroom_light: Optional[str] = Field(
+    homeassistant_token: Optional[str] = Field(
         default=None,
-        description="안방 조명 장치 ID"
-    )
-    smartthings_bathroom_light: Optional[str] = Field(
-        default=None,
-        description="화장실 조명 장치 ID"
-    )
-    smartthings_living_room_speaker_outlet: Optional[str] = Field(
-        default=None,
-        description="거실 스피커 콘센트 장치 ID"
+        description="Home Assistant Long-Lived Access Token"
     )
 
     model_config = SettingsConfigDict(
@@ -127,19 +117,6 @@ class SmartThingsConfig(BaseSettings):
         case_sensitive=False,
         extra="ignore"
     )
-
-    def get_device_config(self) -> Dict[str, str]:
-        """테스트에서 사용할 장치 설정 딕셔너리 반환"""
-        config = {}
-        if self.smartthings_living_room_light:
-            config["living_room_light"] = self.smartthings_living_room_light
-        if self.smartthings_bedroom_light:
-            config["bedroom_light"] = self.smartthings_bedroom_light
-        if self.smartthings_bathroom_light:
-            config["bathroom_light"] = self.smartthings_bathroom_light
-        if self.smartthings_living_room_speaker_outlet:
-            config["living_room_speaker_outlet"] = self.smartthings_living_room_speaker_outlet
-        return config
 
 
 class GoogleCalendarConfig(BaseSettings):
@@ -239,7 +216,7 @@ class Settings:
         self.database = DatabaseConfig()
         self.qdrant = QdrantConfig()
         self.embedding = EmbeddingConfig()
-        self.smartthings = SmartThingsConfig()
+        self.homeassistant = HomeAssistantConfig()
         self.google_calendar = GoogleCalendarConfig()
         self.langfuse = LangfuseConfig()
         self.auth = AuthConfig()
@@ -276,8 +253,12 @@ class Settings:
         print(f"  Type: {self.embedding.embedding_type}")
         print(f"  Dimensions: {self.embedding.embedding_dims}")
 
-        print("\n[SmartThings]")
-        print(f"  Token: {'*' * 20}...{self.smartthings.smartthings_token[-4:]}")
+        print("\n[Home Assistant]")
+        print(f"  URL: {self.homeassistant.homeassistant_url}")
+        if self.homeassistant.homeassistant_token:
+            print(f"  Token: {'*' * 20}...{self.homeassistant.homeassistant_token[-4:]}")
+        else:
+            print(f"  Token: Not configured")
 
         print("\n[Google Calendar]")
         print(f"  Credentials: {self.google_calendar.google_calendar_credentials_path}")
@@ -306,7 +287,7 @@ api_config = settings.api
 db_config = settings.database
 qdrant_config = settings.qdrant
 embedding_config = settings.embedding
-smartthings_config = settings.smartthings
+homeassistant_config = settings.homeassistant
 google_calendar_config = settings.google_calendar
 langfuse_config = settings.langfuse
 auth_config = settings.auth

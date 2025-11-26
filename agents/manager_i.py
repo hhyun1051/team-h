@@ -1,11 +1,16 @@
 # manager_i.py
 """
-Manager I Agent - IoT 제어 에이전트
+Manager I Agent - IoT 제어 에이전트 (Home Assistant 버전)
 
 Manager I는 집안의 IoT 장치를 제어하는 에이전트입니다:
 - 미니PC 종료
 - 거실/안방/화장실 불 제어
 - 거실 스피커 제어 (IoT 콘센트)
+
+변경사항 (2025-11-26):
+- SmartThings OAuth → Home Assistant API로 전환
+- 토큰 갱신 복잡도 제거
+- SmartThings 허브는 Home Assistant Integration으로 연결
 
 ManagerBase를 상속받아 공통 로직을 재사용합니다.
 HumanInTheLoopMiddleware를 통해 위험한 작업에 대한 승인을 요구합니다.
@@ -16,8 +21,6 @@ import subprocess
 from pathlib import Path
 from typing import Optional, Dict, List, Literal
 import asyncio
-import aiohttp
-import time
 
 # 프로젝트 루트 경로 추가
 project_root = Path(__file__).parent.parent
@@ -29,18 +32,25 @@ from agents.context import TeamHContext
 from langchain.agents.middleware import HumanInTheLoopMiddleware
 from langchain.tools import tool, ToolRuntime
 
-# SmartThings API (pysmartthings 사용)
-try:
-    import pysmartthings
-except ImportError:
-    print("⚠️  pysmartthings가 설치되지 않았습니다. pip install pysmartthings를 실행하세요.")
-    pysmartthings = None
+# Home Assistant API Client
+from config.homeassistant_api import HomeAssistantAPIClient
 
 
 class ManagerI(ManagerBase):
-    """Manager I 에이전트 클래스 - IoT 제어 전문"""
+    """Manager I 에이전트 클래스 - IoT 제어 전문 (Home Assistant)"""
 
-    # 클래스 레벨 상수: 방 이름 별칭 매핑
+    # 클래스 레벨 상수: Entity ID 매핑
+    # SmartThings Integration 후 Home Assistant에서 확인한 실제 entity_id 사용
+    ENTITY_MAP = {
+        # 조명 (실제로는 모두 switch로 등록됨)
+        "living_room_light": "switch.geosil",  # 거실
+        "bedroom_light": "switch.naebang",  # 내방 (안방)
+        "bathroom_light": "switch.kyubeu",  # 큐브 (화장실 공기청정기)
+        # 스위치 (스피커 콘센트)
+        "living_room_speaker_outlet": "switch.seupikeo",  # 스피커
+    }
+
+    # 방 이름 별칭 매핑
     ROOM_ALIASES = {
         # Living room
         "거실": "living_room",
@@ -58,13 +68,6 @@ class ManagerI(ManagerBase):
         "bathroom": "bathroom",
     }
 
-    # 방 이름 -> 장치 키 매핑
-    ROOM_DEVICE_MAP = {
-        "living_room": "living_room_light",
-        "bedroom": "bedroom_light",
-        "bathroom": "bathroom_light",
-    }
-
     # 방 이름 한글 변환
     ROOM_NAME_KR = {
         "living_room": "거실",
@@ -76,8 +79,9 @@ class ManagerI(ManagerBase):
         self,
         model_name: str = "gpt-4.1-mini",
         temperature: float = 0.7,
-        smartthings_token: Optional[str] = None,
-        device_config: Optional[Dict[str, str]] = None,
+        homeassistant_url: str = "http://localhost:8124",
+        homeassistant_token: Optional[str] = None,
+        entity_map: Optional[Dict[str, str]] = None,
         additional_tools: Optional[List] = None,
         middleware: Optional[List] = None,
     ):
@@ -85,22 +89,32 @@ class ManagerI(ManagerBase):
         Manager I 에이전트 초기화
 
         Args:
-            model_name: 사용할 LLM 모델 이름 (기본값: gpt-4o-mini)
+            model_name: 사용할 LLM 모델 이름 (기본값: gpt-4.1-mini)
             temperature: 모델 temperature 설정
-            smartthings_token: SmartThings API 토큰
-            device_config: 장치 설정 (room_name -> device_id 매핑)
+            homeassistant_url: Home Assistant URL
+            homeassistant_token: Home Assistant Long-Lived Access Token
+            entity_map: Entity ID 매핑 (기본값: ENTITY_MAP)
             additional_tools: 핸드오프 등 추가 툴 리스트
             middleware: 외부에서 전달받은 미들웨어 리스트 (Langfuse 로깅 등)
         """
-        # 특수 파라미터 검증 및 저장
-        if not smartthings_token:
-            raise ValueError("SmartThings API token is required")
+        # Home Assistant API Client 초기화
+        if not homeassistant_token:
+            raise ValueError(
+                "Home Assistant Long-Lived Access Token is required.\n"
+                "Generate token in Home Assistant:\n"
+                "  Profile → Security → Long-Lived Access Tokens → Create Token"
+            )
 
-        self.smartthings_token = smartthings_token
-        self.device_config = device_config or {}
+        self.ha_client = HomeAssistantAPIClient(
+            url=homeassistant_url,
+            token=homeassistant_token
+        )
 
-        # 장치 설정 검증
-        self._validate_device_config()
+        # Entity ID 매핑 설정
+        self.entity_map = entity_map or self.ENTITY_MAP.copy()
+
+        # Entity 설정 검증 (비동기로 수행할 수 없으므로 경고만 출력)
+        self._validate_entity_config()
 
         # HITL 미들웨어 생성
         hitl_middleware = HumanInTheLoopMiddleware(
@@ -130,22 +144,24 @@ class ManagerI(ManagerBase):
         )
 
         # 추가 초기화 메시지
+        print(f"    - Home Assistant: {homeassistant_url}")
         print(f"    - HITL: Enabled for dangerous operations")
-        print(f"    - Devices configured: {len(self.device_config)}")
+        print(f"    - Entities configured: {len(self.entity_map)}")
 
-    def _validate_device_config(self):
-        """초기화 시 장치 설정 검증"""
-        required_devices = [
+    def _validate_entity_config(self):
+        """초기화 시 Entity 설정 검증"""
+        required_entities = [
             "living_room_light",
             "bedroom_light",
             "bathroom_light",
             "living_room_speaker_outlet"
         ]
 
-        missing_devices = [d for d in required_devices if d not in self.device_config]
-        if missing_devices:
-            print(f"[⚠️] 경고: 일부 장치가 설정되지 않았습니다: {missing_devices}")
+        missing_entities = [e for e in required_entities if e not in self.entity_map]
+        if missing_entities:
+            print(f"[⚠️] 경고: 일부 Entity가 설정되지 않았습니다: {missing_entities}")
             print(f"[⚠️] 이 장치들에 대한 제어 명령은 실패할 수 있습니다.")
+            print(f"[⚠️] Home Assistant에서 SmartThings Integration 설정 후 entity_id를 확인하세요.")
 
     def _control_light(self, room: str, action: Literal["on", "off"]) -> str:
         """
@@ -162,22 +178,21 @@ class ManagerI(ManagerBase):
             # 방 이름 정규화
             room_normalized = self.ROOM_ALIASES.get(room.lower(), room.lower())
 
-            # 장치 키 확인
-            device_key = self.ROOM_DEVICE_MAP.get(room_normalized)
-            if not device_key:
+            # Entity 키 확인
+            entity_key = f"{room_normalized}_light"
+            if entity_key not in self.entity_map:
                 return f"❌ Unknown room: '{room}'. 사용 가능: 거실/안방/화장실 또는 living_room/bedroom/bathroom"
 
-            # 장치 ID 확인
-            device_id = self.device_config.get(device_key)
-            if not device_id:
-                return f"❌ Device not configured for room: {room}"
+            # Entity ID 확인
+            entity_id = self.entity_map[entity_key]
 
-            # SmartThings API로 장치 제어
+            # Home Assistant API로 장치 제어
+            # 모든 장치가 switch로 등록되어 있으므로 switch API 사용
             if action == "on":
-                asyncio.run(self._turn_on_device(device_id))
+                asyncio.run(self.ha_client.turn_on_switch(entity_id))
                 action_kr = "켰습니다"
             else:
-                asyncio.run(self._turn_off_device(device_id))
+                asyncio.run(self.ha_client.turn_off_switch(entity_id))
                 action_kr = "껐습니다"
 
             room_kr = self.ROOM_NAME_KR.get(room_normalized, room)
@@ -270,13 +285,12 @@ class ManagerI(ManagerBase):
                 Status message about the speaker operation
             """
             try:
-                device_id = self.device_config.get("living_room_speaker_outlet")
-                if not device_id:
-                    return "❌ Speaker outlet device not configured"
+                entity_id = self.entity_map.get("living_room_speaker_outlet")
+                if not entity_id:
+                    return "❌ Speaker outlet entity not configured"
 
-                # SmartThings API로 스피커 콘센트 켜기
-                asyncio.run(self._turn_on_device(device_id))
-                time.sleep(0.1)
+                # Home Assistant API로 스피커 콘센트 켜기
+                asyncio.run(self.ha_client.turn_on_switch(entity_id))
                 return "✅ 거실 스피커를 켰습니다."
 
             except Exception as e:
@@ -296,13 +310,12 @@ class ManagerI(ManagerBase):
                 Status message about the speaker operation
             """
             try:
-                device_id = self.device_config.get("living_room_speaker_outlet")
-                if not device_id:
-                    return "❌ Speaker outlet device not configured"
+                entity_id = self.entity_map.get("living_room_speaker_outlet")
+                if not entity_id:
+                    return "❌ Speaker outlet entity not configured"
 
-                # SmartThings API로 스피커 콘센트 끄기
-                asyncio.run(self._turn_off_device(device_id))
-                time.sleep(0.1)
+                # Home Assistant API로 스피커 콘센트 끄기
+                asyncio.run(self.ha_client.turn_off_switch(entity_id))
                 return "✅ 거실 스피커를 껐습니다."
 
             except Exception as e:
@@ -314,40 +327,36 @@ class ManagerI(ManagerBase):
             Get the current status of a device in a specified room.
 
             Args:
-                runtime: Automatically injected runtime context
-
-            Args:
                 room: Room name. Supports both English and Korean:
                     - living_room, 거실, 프로젝터 → living room light
                     - bedroom, 안방, 세로모니터, 서브모니터 → bedroom light
                     - bathroom, 화장실, 공기청정기, 큐브 → bathroom light
                 device_type: Type of device (light or speaker)
+                runtime: Automatically injected runtime context
 
             Returns:
                 Current status of the device
             """
             try:
                 if device_type == "speaker":
-                    device_key = "living_room_speaker_outlet"
+                    entity_key = "living_room_speaker_outlet"
                     room_normalized = "living_room"
                 else:
                     # 방 이름 정규화 (클래스 상수 사용)
                     room_normalized = self.ROOM_ALIASES.get(room.lower(), room.lower())
-                    device_key = self.ROOM_DEVICE_MAP.get(room_normalized)
+                    entity_key = f"{room_normalized}_light"
 
-                if not device_key:
+                if entity_key not in self.entity_map:
                     return f"❌ Unknown room or device type"
 
-                device_id = self.device_config.get(device_key)
-                if not device_id:
-                    return f"❌ Device not configured"
+                entity_id = self.entity_map[entity_key]
 
-                # SmartThings API로 상태 확인
-                status = asyncio.run(self._get_device_status(device_id))
+                # Home Assistant API로 상태 확인
+                is_on = asyncio.run(self.ha_client.is_on(entity_id))
 
                 room_kr = self.ROOM_NAME_KR.get(room_normalized, room)
                 device_kr = "스피커" if device_type == "speaker" else "불"
-                state_kr = "켜져 있습니다" if status == "on" else "꺼져 있습니다"
+                state_kr = "켜져 있습니다" if is_on else "꺼져 있습니다"
 
                 return f"📊 {room_kr} {device_kr}은(는) 현재 {state_kr}."
 
@@ -362,40 +371,6 @@ class ManagerI(ManagerBase):
             turn_off_speaker,
             get_device_status,
         ]
-
-    async def _turn_on_device(self, device_id: str) -> bool:
-        """SmartThings API를 사용하여 장치 켜기"""
-        async with aiohttp.ClientSession() as session:
-            api = pysmartthings.SmartThings(_token=self.smartthings_token, session=session)
-            await api.execute_device_command(
-                device_id=device_id,
-                capability=pysmartthings.Capability.SWITCH,
-                command=pysmartthings.Command.ON,
-                component="main"
-            )
-            return True
-
-    async def _turn_off_device(self, device_id: str) -> bool:
-        """SmartThings API를 사용하여 장치 끄기"""
-        async with aiohttp.ClientSession() as session:
-            api = pysmartthings.SmartThings(_token=self.smartthings_token, session=session)
-            await api.execute_device_command(
-                device_id=device_id,
-                capability=pysmartthings.Capability.SWITCH,
-                command=pysmartthings.Command.OFF,
-                component="main"
-            )
-            return True
-
-    async def _get_device_status(self, device_id: str) -> str:
-        """SmartThings API를 사용하여 장치 상태 확인"""
-        async with aiohttp.ClientSession() as session:
-            api = pysmartthings.SmartThings(_token=self.smartthings_token, session=session)
-            status = await api.get_device_status(device_id)
-
-            # switch capability의 상태 확인
-            switch_status = status.switch
-            return switch_status  # "on" or "off"
 
 
 def create_manager_i_agent(**kwargs) -> ManagerI:

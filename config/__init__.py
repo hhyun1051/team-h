@@ -16,16 +16,20 @@ from config.settings import (
     DatabaseConfig,
     QdrantConfig,
     EmbeddingConfig,
-    SmartThingsConfig,
+    HomeAssistantConfig,
     GoogleCalendarConfig,
     APIConfig,
+    LangfuseConfig,
+    AuthConfig,
     settings,
     api_config,
     db_config,
     qdrant_config,
     embedding_config,
-    smartthings_config,
+    homeassistant_config,
     google_calendar_config,
+    langfuse_config,
+    auth_config,
 )
 
 __all__ = [
@@ -34,17 +38,21 @@ __all__ = [
     "DatabaseConfig",
     "QdrantConfig",
     "EmbeddingConfig",
-    "SmartThingsConfig",
+    "HomeAssistantConfig",
     "GoogleCalendarConfig",
     "APIConfig",
+    "LangfuseConfig",
+    "AuthConfig",
     # 전역 인스턴스
     "settings",
     "api_config",
     "db_config",
     "qdrant_config",
     "embedding_config",
-    "smartthings_config",
+    "homeassistant_config",
     "google_calendar_config",
+    "langfuse_config",
+    "auth_config",
 ]
 
 __version__ = "0.1.0"

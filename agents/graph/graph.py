@@ -47,9 +47,10 @@ class TeamHGraph(NodesMixin):
         enable_manager_s: bool = True,
         enable_manager_t: bool = True,
 
-        # Manager I params
-        smartthings_token: Optional[str] = None,
-        device_config: Optional[Dict[str, str]] = None,
+        # Manager I params (Home Assistant)
+        homeassistant_url: str = "http://localhost:8124",
+        homeassistant_token: Optional[str] = None,
+        entity_map: Optional[Dict[str, str]] = None,
 
         # Manager M params
         embedding_type: Optional[str] = None,
@@ -86,8 +87,9 @@ class TeamHGraph(NodesMixin):
             enable_manager_m: Manager M 활성화 여부
             enable_manager_s: Manager S 활성화 여부
             enable_manager_t: Manager T 활성화 여부
-            smartthings_token: SmartThings API 토큰
-            device_config: IoT 장치 설정
+            homeassistant_url: Home Assistant URL
+            homeassistant_token: Home Assistant Long-Lived Access Token
+            entity_map: Entity ID 매핑 (옵션)
             embedding_type: 임베딩 타입 ("fastapi" 또는 "openai")
             embedder_url: FastAPI 임베딩 서버 URL
             openai_api_key: OpenAI API 키
@@ -124,14 +126,15 @@ class TeamHGraph(NodesMixin):
         self.max_handoffs = max_handoffs
 
         # Manager 활성화 플래그 저장
-        self.enable_manager_i = enable_manager_i and smartthings_token
+        self.enable_manager_i = enable_manager_i and homeassistant_token
         self.enable_manager_m = enable_manager_m
         self.enable_manager_s = enable_manager_s and tavily_api_key
         self.enable_manager_t = enable_manager_t
 
-        # 설정 저장
-        self.smartthings_token = smartthings_token
-        self.device_config = device_config
+        # 설정 저장 (Home Assistant)
+        self.homeassistant_url = homeassistant_url
+        self.homeassistant_token = homeassistant_token
+        self.entity_map = entity_map
         self.embedding_type = embedding_type
         self.embedder_url = embedder_url
         self.openai_api_key = openai_api_key
@@ -427,8 +430,9 @@ class TeamHGraph(NodesMixin):
                 self.manager_i = ManagerI(
                     model_name=self.model_name,
                     temperature=self.temperature,
-                    smartthings_token=self.smartthings_token,
-                    device_config=self.device_config,
+                    homeassistant_url=self.homeassistant_url,
+                    homeassistant_token=self.homeassistant_token,
+                    entity_map=self.entity_map,
                     additional_tools=handoff_tools_for_i if handoff_tools_for_i else None,
                     middleware=common_middlewares if common_middlewares else None,
                 )

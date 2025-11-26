@@ -123,9 +123,9 @@ def validate_team_h_config(config: Dict) -> tuple[bool, Optional[str]]:
     if not (enable_i or enable_m or enable_s):
         return False, "최소 하나의 매니저를 활성화해야 합니다."
 
-    # Manager I가 활성화되어 있으면 SmartThings Token 필요
-    if enable_i and not config.get("smartthings_token"):
-        return False, "Manager I를 사용하려면 SmartThings Token이 필요합니다."
+    # Manager I가 활성화되어 있으면 Home Assistant Token 필요
+    if enable_i and not config.get("homeassistant_token"):
+        return False, "Manager I를 사용하려면 Home Assistant Token이 필요합니다."
 
     # Manager S가 활성화되어 있으면 Tavily API Key 필요
     if enable_s and not config.get("tavily_api_key"):
@@ -174,21 +174,23 @@ def validate_manager_i_config(config: Dict) -> tuple[bool, Optional[str]]:
     Returns:
         (is_valid, error_message) 튜플
     """
-    if not config.get("smartthings_token"):
-        return False, "SmartThings Token이 필요합니다."
+    if not config.get("homeassistant_token"):
+        return False, "Home Assistant Token이 필요합니다."
 
-    # 장치 설정 확인
-    device_config = config.get("device_config", {})
-    required_devices = [
-        "living_room_light",
-        "bedroom_light",
-        "bathroom_light",
-        "living_room_speaker_outlet"
-    ]
+    # Entity 설정 확인 (선택사항)
+    # entity_map이 제공되지 않으면 ManagerI가 기본 매핑 사용
+    entity_map = config.get("entity_map", {})
+    if entity_map:
+        required_entities = [
+            "living_room_light",
+            "bedroom_light",
+            "bathroom_light",
+            "living_room_speaker_outlet"
+        ]
 
-    missing_devices = [d for d in required_devices if d not in device_config]
-    if missing_devices:
-        return False, f"일부 장치가 설정되지 않았습니다: {', '.join(missing_devices)}"
+        missing_entities = [e for e in required_entities if e not in entity_map]
+        if missing_entities:
+            return False, f"일부 entity가 설정되지 않았습니다: {', '.join(missing_entities)}"
 
     return True, None
 

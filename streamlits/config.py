@@ -22,7 +22,7 @@ sys.path.insert(0, str(project_root))
 try:
     from config.settings import (
         api_config,
-        smartthings_config,
+        homeassistant_config,
         google_calendar_config,
         embedding_config,
         qdrant_config,
@@ -96,9 +96,10 @@ def get_env_defaults() -> Dict[str, Any]:
     if SETTINGS_AVAILABLE:
         # config.settings에서 로드
         return {
-            "smartthings_token": smartthings_config.smartthings_token,
+            # Home Assistant 설정 (Manager I용)
+            "homeassistant_url": homeassistant_config.homeassistant_url,
+            "homeassistant_token": homeassistant_config.homeassistant_token,
             "tavily_api_key": api_config.tavily_api_key,
-            "device_config": smartthings_config.get_device_config(),
             "google_credentials_path": str(google_calendar_config.google_calendar_credentials_path),
             "google_token_path": str(google_calendar_config.google_calendar_token_path),
             # Manager M (Qdrant + Embedding) 설정 추가
@@ -114,14 +115,10 @@ def get_env_defaults() -> Dict[str, Any]:
         # 환경변수에서 직접 로드 (폴백)
         import os
         return {
-            "smartthings_token": os.getenv("SMARTTHINGS_TOKEN", ""),
+            # Home Assistant 설정 (Manager I용)
+            "homeassistant_url": os.getenv("HOMEASSISTANT_URL", "http://localhost:8124"),
+            "homeassistant_token": os.getenv("HOMEASSISTANT_TOKEN", ""),
             "tavily_api_key": os.getenv("TAVILY_API_KEY", ""),
-            "device_config": {
-                "living_room_speaker_outlet": os.getenv("SPEAKER_ID", ""),
-                "living_room_light": os.getenv("PROJECTOR_ID", ""),
-                "bedroom_light": os.getenv("VERTICAL_MONITOR_ID", ""),
-                "bathroom_light": os.getenv("AIR_PURIFIER_ID", ""),
-            },
             "google_credentials_path": os.getenv("GOOGLE_CALENDAR_CREDENTIALS_PATH"),
             "google_token_path": os.getenv("GOOGLE_CALENDAR_TOKEN_PATH"),
             # Manager M (Qdrant + Embedding) 설정 추가
@@ -190,13 +187,14 @@ USAGE_GUIDES = {
     "manager_i": """
 **Manager I란?**
 - IoT 제어 에이전트
-- SmartThings를 통해 스마트 기기 제어
+- Home Assistant를 통해 스마트 기기 제어
 - 거실/안방/화장실 불, 스피커, 미니PC 제어
 
 **사용 방법:**
-1. SmartThings Token 입력
-2. '에이전트 초기화' 버튼 클릭
-3. 아래 채팅창에서 Manager I와 대화
+1. Home Assistant 설정 및 Long-lived Token 발급
+2. .env 파일에 HOMEASSISTANT_TOKEN 설정
+3. '에이전트 초기화' 버튼 클릭
+4. 아래 채팅창에서 Manager I와 대화
 
 **제어 가능한 장치:**
 - 거실 불 (프로젝터)
@@ -214,6 +212,10 @@ USAGE_GUIDES = {
 **Human-in-the-Loop:**
 - 위험한 작업(미니PC 종료)만 승인 요청
 - 일반 불 제어는 즉시 실행
+
+**참고:**
+- HOMEASSISTANT_MIGRATION_GUIDE.md 참조
+- Home Assistant는 http://localhost:8124에서 실행
 """,
     "manager_t": """
 **Manager T란?**

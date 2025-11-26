@@ -98,9 +98,10 @@ def initialize_session_state():
         thread_id=st.session_state.session_id,  # session_id를 thread_id로 사용
         routing_history=[],
         pending_approval=None,
-        smartthings_token=env_defaults["smartthings_token"],
+        # Home Assistant 설정 (Manager I용)
+        homeassistant_url=env_defaults["homeassistant_url"],
+        homeassistant_token=env_defaults["homeassistant_token"],
         tavily_api_key=env_defaults["tavily_api_key"],
-        device_config=env_defaults["device_config"],
         google_credentials_path=env_defaults["google_credentials_path"],
         google_token_path=env_defaults["google_token_path"],
         # Manager M (Qdrant + Embedding) 설정
@@ -138,8 +139,9 @@ def create_agent():
                 enable_manager_m=st.session_state.enable_manager_m,
                 enable_manager_s=st.session_state.enable_manager_s,
                 enable_manager_t=st.session_state.enable_manager_t,
-                smartthings_token=st.session_state.smartthings_token or None,
-                device_config=st.session_state.device_config,
+                # Home Assistant 설정 (Manager I용)
+                homeassistant_url=st.session_state.homeassistant_url,
+                homeassistant_token=st.session_state.homeassistant_token or None,
                 # Manager M (Qdrant + Embedding) 설정
                 embedding_type=st.session_state.embedding_type,
                 embedder_url=st.session_state.embedder_url,
