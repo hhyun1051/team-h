@@ -59,7 +59,6 @@ class ManagerI(ManagerBase):
         # Living room light
         "거실": "living_room_light",
         "거실불": "living_room_light",
-        "프로젝터": "living_room_light",
         "living_room": "living_room_light",
         "living_room_light": "living_room_light",
         # Speaker
@@ -200,8 +199,7 @@ class ManagerI(ManagerBase):
             # Entity ID 확인
             entity_id = self.entity_map[device_normalized]
 
-            # Home Assistant API로 장치 제어
-            # 모든 장치가 switch로 등록되어 있으므로 switch API 사용
+            # Home Assistant API로 장치 제어 (모든 장치는 switch 도메인)
             if action == "on":
                 asyncio.run(self.ha_client.turn_on_switch(entity_id))
                 action_kr = "켰습니다"
