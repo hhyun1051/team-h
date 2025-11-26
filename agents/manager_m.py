@@ -321,36 +321,3 @@ class ManagerM(ManagerBase):
             delete_memory,
             delete_all_memories,
         ]
-
-
-def create_manager_m_agent(**kwargs) -> ManagerM:
-    """
-    Manager M 에이전트 생성 헬퍼 함수
-
-    Args:
-        **kwargs: ManagerM 초기화 파라미터
-
-    Returns:
-        ManagerM 인스턴스
-    """
-    return ManagerM(**kwargs)
-
-
-# 싱글톤 인스턴스 (선택적 사용)
-_manager_m_agent_instance = None
-
-
-def get_manager_m_agent(**kwargs) -> ManagerM:
-    """
-    Manager M 에이전트 싱글톤 인스턴스 반환
-
-    Args:
-        **kwargs: ManagerM 초기화 파라미터 (처음 생성 시에만 사용됨)
-
-    Returns:
-        ManagerM 인스턴스
-    """
-    global _manager_m_agent_instance
-    if _manager_m_agent_instance is None:
-        _manager_m_agent_instance = ManagerM(**kwargs)
-    return _manager_m_agent_instance

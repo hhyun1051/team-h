@@ -603,36 +603,3 @@ class ManagerT(ManagerBase):
             get_tomorrow_events,
             get_week_events,
         ]
-
-
-def create_manager_t_agent(**kwargs) -> ManagerT:
-    """
-    Manager T 에이전트 생성 헬퍼 함수
-
-    Args:
-        **kwargs: ManagerT 초기화 파라미터
-
-    Returns:
-        ManagerT 인스턴스
-    """
-    return ManagerT(**kwargs)
-
-
-# 싱글톤 인스턴스 (선택적 사용)
-_manager_t_agent_instance = None
-
-
-def get_manager_t_agent(**kwargs) -> ManagerT:
-    """
-    Manager T 에이전트 싱글톤 인스턴스 반환
-
-    Args:
-        **kwargs: ManagerT 초기화 파라미터 (처음 생성 시에만 사용됨)
-
-    Returns:
-        ManagerT 인스턴스
-    """
-    global _manager_t_agent_instance
-    if _manager_t_agent_instance is None:
-        _manager_t_agent_instance = ManagerT(**kwargs)
-    return _manager_t_agent_instance

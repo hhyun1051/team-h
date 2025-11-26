@@ -371,36 +371,3 @@ class ManagerI(ManagerBase):
             turn_off_speaker,
             get_device_status,
         ]
-
-
-def create_manager_i_agent(**kwargs) -> ManagerI:
-    """
-    Manager I 에이전트 생성 헬퍼 함수
-
-    Args:
-        **kwargs: ManagerI 초기화 파라미터
-
-    Returns:
-        ManagerI 인스턴스
-    """
-    return ManagerI(**kwargs)
-
-
-# 싱글톤 인스턴스 (선택적 사용)
-_manager_i_agent_instance = None
-
-
-def get_manager_i_agent(**kwargs) -> ManagerI:
-    """
-    Manager I 에이전트 싱글톤 인스턴스 반환
-
-    Args:
-        **kwargs: ManagerI 초기화 파라미터 (처음 생성 시에만 사용됨)
-
-    Returns:
-        ManagerI 인스턴스
-    """
-    global _manager_i_agent_instance
-    if _manager_i_agent_instance is None:
-        _manager_i_agent_instance = ManagerI(**kwargs)
-    return _manager_i_agent_instance
