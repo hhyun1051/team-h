@@ -4,8 +4,11 @@ Manager I Agent - IoT 제어 에이전트 (Home Assistant 버전)
 
 Manager I는 집안의 IoT 장치를 제어하는 에이전트입니다:
 - 미니PC 종료
-- 거실/안방/화장실 불 제어
+- 거실 불 제어
 - 거실 스피커 제어 (IoT 콘센트)
+- 밥솥 제어 (IoT 콘센트)
+- 보조모니터 제어 (IoT 콘센트)
+- 큐브 공기청정기 제어
 
 변경사항 (2025-11-26):
 - SmartThings OAuth → Home Assistant API로 전환
@@ -42,37 +45,48 @@ class ManagerI(ManagerBase):
     # 클래스 레벨 상수: Entity ID 매핑
     # SmartThings Integration 후 Home Assistant에서 확인한 실제 entity_id 사용
     ENTITY_MAP = {
-        # 조명 (실제로는 모두 switch로 등록됨)
+        # 조명
         "living_room_light": "switch.geosil",  # 거실
-        "bedroom_light": "switch.naebang",  # 내방 (안방)
-        "bathroom_light": "switch.kyubeu",  # 큐브 (화장실 공기청정기)
-        # 스위치 (스피커 콘센트)
-        "living_room_speaker_outlet": "switch.seupikeo",  # 스피커
+        # 스위치/콘센트
+        "speaker": "switch.speaker",  # 스피커
+        "rice_cooker": "switch.bapsot",  # 밥솥
+        "submonitor": "switch.submonitor",  # 보조모니터
+        "cube": "switch.cube",  # 큐브 공기청정기
     }
 
-    # 방 이름 별칭 매핑
-    ROOM_ALIASES = {
-        # Living room
-        "거실": "living_room",
-        "프로젝터": "living_room",
-        "living_room": "living_room",
-        # Bedroom
-        "안방": "bedroom",
-        "세로모니터": "bedroom",
-        "서브모니터": "bedroom",
-        "bedroom": "bedroom",
-        # Bathroom
-        "화장실": "bathroom",
-        "공기청정기": "bathroom",
-        "큐브": "bathroom",
-        "bathroom": "bathroom",
+    # 장치 별칭 매핑 (한글/영어 모두 지원)
+    DEVICE_ALIASES = {
+        # Living room light
+        "거실": "living_room_light",
+        "거실불": "living_room_light",
+        "프로젝터": "living_room_light",
+        "living_room": "living_room_light",
+        "living_room_light": "living_room_light",
+        # Speaker
+        "스피커": "speaker",
+        "speaker": "speaker",
+        # Rice cooker
+        "밥솥": "rice_cooker",
+        "rice_cooker": "rice_cooker",
+        "밥": "rice_cooker",
+        # Submonitor
+        "보조모니터": "submonitor",
+        "서브모니터": "submonitor",
+        "세로모니터": "submonitor",
+        "submonitor": "submonitor",
+        # Cube air purifier
+        "큐브": "cube",
+        "공기청정기": "cube",
+        "cube": "cube",
     }
 
-    # 방 이름 한글 변환
-    ROOM_NAME_KR = {
-        "living_room": "거실",
-        "bedroom": "안방",
-        "bathroom": "화장실",
+    # 장치 이름 한글 변환
+    DEVICE_NAME_KR = {
+        "living_room_light": "거실 불",
+        "speaker": "스피커",
+        "rice_cooker": "밥솥",
+        "submonitor": "보조모니터",
+        "cube": "큐브",
     }
 
     def __init__(
@@ -121,9 +135,8 @@ class ManagerI(ManagerBase):
             interrupt_on={
                 # 위험한 작업 - 승인 필요
                 "shutdown_mini_pc": True,
-                "turn_on_light": False,
-                "turn_off_light": False,
-                "turn_off_speaker": False,
+                "turn_on_device": False,
+                "turn_off_device": False,
                 "get_device_status": False,
             },
             description_prefix="🏠 IoT operation pending approval",
@@ -152,9 +165,10 @@ class ManagerI(ManagerBase):
         """초기화 시 Entity 설정 검증"""
         required_entities = [
             "living_room_light",
-            "bedroom_light",
-            "bathroom_light",
-            "living_room_speaker_outlet"
+            "speaker",
+            "rice_cooker",
+            "submonitor",
+            "cube"
         ]
 
         missing_entities = [e for e in required_entities if e not in self.entity_map]
@@ -163,28 +177,28 @@ class ManagerI(ManagerBase):
             print(f"[⚠️] 이 장치들에 대한 제어 명령은 실패할 수 있습니다.")
             print(f"[⚠️] Home Assistant에서 SmartThings Integration 설정 후 entity_id를 확인하세요.")
 
-    def _control_light(self, room: str, action: Literal["on", "off"]) -> str:
+    def _control_device(self, device: str, action: Literal["on", "off"]) -> str:
         """
-        통합된 조명 제어 로직 (turn_on/turn_off 중복 제거)
+        통합된 장치 제어 로직 (모든 장치에 대해 turn_on/turn_off)
 
         Args:
-            room: 방 이름 (한글/영어 모두 지원)
+            device: 장치 이름 (한글/영어 모두 지원)
             action: "on" 또는 "off"
 
         Returns:
             작업 결과 메시지
         """
         try:
-            # 방 이름 정규화
-            room_normalized = self.ROOM_ALIASES.get(room.lower(), room.lower())
+            # 장치 이름 정규화
+            device_normalized = self.DEVICE_ALIASES.get(device.lower(), device.lower())
 
             # Entity 키 확인
-            entity_key = f"{room_normalized}_light"
-            if entity_key not in self.entity_map:
-                return f"❌ Unknown room: '{room}'. 사용 가능: 거실/안방/화장실 또는 living_room/bedroom/bathroom"
+            if device_normalized not in self.entity_map:
+                available = ", ".join(set(self.DEVICE_ALIASES.values()))
+                return f"❌ Unknown device: '{device}'. Available: {available}"
 
             # Entity ID 확인
-            entity_id = self.entity_map[entity_key]
+            entity_id = self.entity_map[device_normalized]
 
             # Home Assistant API로 장치 제어
             # 모든 장치가 switch로 등록되어 있으므로 switch API 사용
@@ -195,11 +209,11 @@ class ManagerI(ManagerBase):
                 asyncio.run(self.ha_client.turn_off_switch(entity_id))
                 action_kr = "껐습니다"
 
-            room_kr = self.ROOM_NAME_KR.get(room_normalized, room)
-            return f"✅ {room_kr} 불을 {action_kr}."
+            device_kr = self.DEVICE_NAME_KR.get(device_normalized, device)
+            return f"✅ {device_kr}을(를) {action_kr}."
 
         except Exception as e:
-            return f"❌ Error controlling light in {room}: {str(e)}"
+            return f"❌ Error controlling device '{device}': {str(e)}"
 
     def _create_tools(self) -> List:
         """IoT 제어 관련 툴 생성"""
@@ -238,136 +252,84 @@ class ManagerI(ManagerBase):
                 return f"❌ Error shutting down mini PC: {str(e)}"
 
         @tool
-        def turn_on_light(room: str, runtime: ToolRuntime[TeamHContext] = None) -> str:
+        def turn_on_device(device: str, runtime: ToolRuntime[TeamHContext] = None) -> str:
             """
-            Turn on the light in a specified room.
+            Turn on a smart home device.
 
             Args:
-                room: Room name. Supports both English and Korean:
-                    - living_room, 거실, 프로젝터 → living room light
-                    - bedroom, 안방, 세로모니터, 서브모니터 → bedroom light
-                    - bathroom, 화장실, 공기청정기, 큐브 → bathroom light
+                device: Device name. Supports both English and Korean:
+                    - 거실, 거실불, living_room → living room light
+                    - 스피커, speaker → speaker
+                    - 밥솥, 밥, rice_cooker → rice cooker
+                    - 보조모니터, 서브모니터, 세로모니터, submonitor → submonitor
+                    - 큐브, 공기청정기, cube → cube air purifier
                 runtime: Automatically injected runtime context
 
             Returns:
-                Status message about the light operation
+                Status message about the device operation
             """
-            return self._control_light(room, "on")
+            return self._control_device(device, "on")
 
         @tool
-        def turn_off_light(room: str, runtime: ToolRuntime[TeamHContext] = None) -> str:
+        def turn_off_device(device: str, runtime: ToolRuntime[TeamHContext] = None) -> str:
             """
-            Turn off the light in a specified room.
+            Turn off a smart home device.
 
             Args:
-                room: Room name. Supports both English and Korean:
-                    - living_room, 거실, 프로젝터 → living room light
-                    - bedroom, 안방, 세로모니터, 서브모니터 → bedroom light
-                    - bathroom, 화장실, 공기청정기, 큐브 → bathroom light
+                device: Device name. Supports both English and Korean:
+                    - 거실, 거실불, living_room → living room light
+                    - 스피커, speaker → speaker
+                    - 밥솥, 밥, rice_cooker → rice cooker
+                    - 보조모니터, 서브모니터, 세로모니터, submonitor → submonitor
+                    - 큐브, 공기청정기, cube → cube air purifier
                 runtime: Automatically injected runtime context
 
             Returns:
-                Status message about the light operation
+                Status message about the device operation
             """
-            return self._control_light(room, "off")
+            return self._control_device(device, "off")
 
         @tool
-        def turn_on_speaker(runtime: ToolRuntime[TeamHContext] = None) -> str:
+        def get_device_status(device: str, runtime: ToolRuntime[TeamHContext] = None) -> str:
             """
-            Turn on the living room speaker via smart outlet.
-
-            The speaker is connected to a smart plug that can be controlled remotely.
+            Get the current status of a smart home device.
 
             Args:
-                runtime: Automatically injected runtime context
-
-            Returns:
-                Status message about the speaker operation
-            """
-            try:
-                entity_id = self.entity_map.get("living_room_speaker_outlet")
-                if not entity_id:
-                    return "❌ Speaker outlet entity not configured"
-
-                # Home Assistant API로 스피커 콘센트 켜기
-                asyncio.run(self.ha_client.turn_on_switch(entity_id))
-                return "✅ 거실 스피커를 켰습니다."
-
-            except Exception as e:
-                return f"❌ Error turning on speaker: {str(e)}"
-
-        @tool
-        def turn_off_speaker(runtime: ToolRuntime[TeamHContext] = None) -> str:
-            """
-            Turn off the living room speaker via smart outlet.
-
-            The speaker is connected to a smart plug that can be controlled remotely.
-
-            Args:
-                runtime: Automatically injected runtime context
-
-            Returns:
-                Status message about the speaker operation
-            """
-            try:
-                entity_id = self.entity_map.get("living_room_speaker_outlet")
-                if not entity_id:
-                    return "❌ Speaker outlet entity not configured"
-
-                # Home Assistant API로 스피커 콘센트 끄기
-                asyncio.run(self.ha_client.turn_off_switch(entity_id))
-                return "✅ 거실 스피커를 껐습니다."
-
-            except Exception as e:
-                return f"❌ Error turning off speaker: {str(e)}"
-
-        @tool
-        def get_device_status(room: str, device_type: str = "light", runtime: ToolRuntime[TeamHContext] = None) -> str:
-            """
-            Get the current status of a device in a specified room.
-
-            Args:
-                room: Room name. Supports both English and Korean:
-                    - living_room, 거실, 프로젝터 → living room light
-                    - bedroom, 안방, 세로모니터, 서브모니터 → bedroom light
-                    - bathroom, 화장실, 공기청정기, 큐브 → bathroom light
-                device_type: Type of device (light or speaker)
+                device: Device name. Supports both English and Korean:
+                    - 거실, 거실불, living_room → living room light
+                    - 스피커, speaker → speaker
+                    - 밥솥, 밥, rice_cooker → rice cooker
+                    - 보조모니터, 서브모니터, 세로모니터, submonitor → submonitor
+                    - 큐브, 공기청정기, cube → cube air purifier
                 runtime: Automatically injected runtime context
 
             Returns:
                 Current status of the device
             """
             try:
-                if device_type == "speaker":
-                    entity_key = "living_room_speaker_outlet"
-                    room_normalized = "living_room"
-                else:
-                    # 방 이름 정규화 (클래스 상수 사용)
-                    room_normalized = self.ROOM_ALIASES.get(room.lower(), room.lower())
-                    entity_key = f"{room_normalized}_light"
+                # 장치 이름 정규화
+                device_normalized = self.DEVICE_ALIASES.get(device.lower(), device.lower())
 
-                if entity_key not in self.entity_map:
-                    return f"❌ Unknown room or device type"
+                if device_normalized not in self.entity_map:
+                    available = ", ".join(set(self.DEVICE_ALIASES.values()))
+                    return f"❌ Unknown device: '{device}'. Available: {available}"
 
-                entity_id = self.entity_map[entity_key]
+                entity_id = self.entity_map[device_normalized]
 
                 # Home Assistant API로 상태 확인
                 is_on = asyncio.run(self.ha_client.is_on(entity_id))
 
-                room_kr = self.ROOM_NAME_KR.get(room_normalized, room)
-                device_kr = "스피커" if device_type == "speaker" else "불"
+                device_kr = self.DEVICE_NAME_KR.get(device_normalized, device)
                 state_kr = "켜져 있습니다" if is_on else "꺼져 있습니다"
 
-                return f"📊 {room_kr} {device_kr}은(는) 현재 {state_kr}."
+                return f"📊 {device_kr}은(는) 현재 {state_kr}."
 
             except Exception as e:
                 return f"❌ Error getting device status: {str(e)}"
 
         return [
             shutdown_mini_pc,
-            turn_on_light,
-            turn_off_light,
-            turn_on_speaker,
-            turn_off_speaker,
+            turn_on_device,
+            turn_off_device,
             get_device_status,
         ]
