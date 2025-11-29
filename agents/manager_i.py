@@ -47,6 +47,7 @@ class ManagerI(ManagerBase):
     ENTITY_MAP = {
         # 조명
         "living_room_light": "switch.geosil",  # 거실
+        "bedroom_light": "switch.anbang",  # 안방
         # 스위치/콘센트
         "speaker": "switch.speaker",  # 스피커
         "rice_cooker": "switch.bapsot",  # 밥솥
@@ -61,6 +62,13 @@ class ManagerI(ManagerBase):
         "거실불": "living_room_light",
         "living_room": "living_room_light",
         "living_room_light": "living_room_light",
+        # Bedroom light
+        "안방": "bedroom_light",
+        "방": "bedroom_light",
+        "방불": "bedroom_light",
+        "안방불": "bedroom_light",
+        "bedroom": "bedroom_light",
+        "bedroom_light": "bedroom_light",
         # Speaker
         "스피커": "speaker",
         "speaker": "speaker",
@@ -82,6 +90,7 @@ class ManagerI(ManagerBase):
     # 장치 이름 한글 변환
     DEVICE_NAME_KR = {
         "living_room_light": "거실 불",
+        "bedroom_light": "안방 불",
         "speaker": "스피커",
         "rice_cooker": "밥솥",
         "submonitor": "보조모니터",
@@ -164,6 +173,7 @@ class ManagerI(ManagerBase):
         """초기화 시 Entity 설정 검증"""
         required_entities = [
             "living_room_light",
+            "bedroom_light",
             "speaker",
             "rice_cooker",
             "submonitor",
@@ -257,6 +267,7 @@ class ManagerI(ManagerBase):
             Args:
                 device: Device name. Supports both English and Korean:
                     - 거실, 거실불, living_room → living room light
+                    - 안방, 안방불, bedroom → bedroom light
                     - 스피커, speaker → speaker
                     - 밥솥, 밥, rice_cooker → rice cooker
                     - 보조모니터, 서브모니터, 세로모니터, submonitor → submonitor
@@ -276,6 +287,7 @@ class ManagerI(ManagerBase):
             Args:
                 device: Device name. Supports both English and Korean:
                     - 거실, 거실불, living_room → living room light
+                    - 안방, 안방불, bedroom → bedroom light
                     - 스피커, speaker → speaker
                     - 밥솥, 밥, rice_cooker → rice cooker
                     - 보조모니터, 서브모니터, 세로모니터, submonitor → submonitor
@@ -295,6 +307,7 @@ class ManagerI(ManagerBase):
             Args:
                 device: Device name. Supports both English and Korean:
                     - 거실, 거실불, living_room → living room light
+                    - 안방, 안방불, bedroom → bedroom light
                     - 스피커, speaker → speaker
                     - 밥솥, 밥, rice_cooker → rice cooker
                     - 보조모니터, 서브모니터, 세로모니터, submonitor → submonitor
