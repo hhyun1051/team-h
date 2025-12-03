@@ -67,5 +67,5 @@ examples/
 !/readme.md
 !/README.md
 
-/root/team-h/debug_ha_entities.py
+debug_ha_entities.py
 /database/*
