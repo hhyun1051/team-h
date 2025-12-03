@@ -68,4 +68,4 @@ examples/
 !/README.md
 
 debug_ha_entities.py
-/database/*
+/database/postgres/*
