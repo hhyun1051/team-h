@@ -486,25 +486,6 @@ with st.sidebar:
         value=st.session_state.user_id
     )
 
-    st.divider()
-
-    # 에이전트 상태 표시 (간단하게)
-    if st.session_state.agent is not None:
-        st.success("✅ 에이전트 활성화됨")
-    else:
-        st.warning("⏳ 에이전트 초기화 중...")
-
-    st.divider()
-
-    st.caption(f"""
-**상태:**
-- 승인 대기: {'있음' if st.session_state.pending_approval else '없음'}
-- 메시지 수: {len(st.session_state.messages)}
-
-**Langfuse 추적:**
-[이 세션 보기](http://192.168.0.151:3000/sessions/{st.session_state.session_id})
-""")
-
 # ============================================================================
 # 메인 화면 - 사이드바 선택에 따라 조건부 렌더링
 # ============================================================================
