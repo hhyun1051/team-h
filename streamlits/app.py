@@ -619,9 +619,6 @@ elif st.session_state.view_mode == "⚙️ 옵션":
 # 입력 처리 (화면 모드와 무관하게 실행)
 # ============================================================================
 
-# prompt 변수 초기화
-prompt = None
-
 # 음성 입력 처리 (채팅 화면이고 음성 모드일 때만)
 if st.session_state.view_mode == "💬 채팅" and st.session_state.input_mode == "🎤 음성":
     st.caption("🎤 아래 녹음 버튼을 눌러 음성을 입력하세요")
@@ -630,7 +627,8 @@ if st.session_state.view_mode == "💬 채팅" and st.session_state.input_mode =
         prompt = audio_text
 
 # 입력이 있을 때 처리 (채팅 화면에서만)
-if st.session_state.view_mode == "💬 채팅" and prompt:
+# prompt는 채팅 화면의 st.chat_input() 또는 음성 입력에서 정의됨
+if st.session_state.view_mode == "💬 채팅" and 'prompt' in locals() and prompt:
     if st.session_state.agent is None:
         st.error("❌ 에이전트 초기화에 실패했습니다. 사이드바에서 '에이전트 재시작' 버튼을 눌러주세요.")
         st.stop()
