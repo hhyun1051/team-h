@@ -76,7 +76,7 @@ DEFAULT_VALUES = {
         "manager_i": "streamlit_iot_thread",
         "manager_t": "streamlit_calendar_thread",
     },
-    "model_name": "gpt-4o-mini",
+    "model_name": "gpt-4.1-mini",
     "temperature": 0.7,
     "max_search_results": 5,
 }
