@@ -118,6 +118,9 @@ def initialize_session_state():
         enable_manager_s=True,
         enable_manager_t=True,
         agent_initialized=False,  # 자동 초기화 완료 플래그
+        # UI 설정
+        view_mode="💬 채팅",  # 화면 모드 (채팅/옵션)
+        input_mode="💬 텍스트",  # 입력 방식 (텍스트/음성)
     )
 
     # 에이전트 자동 초기화 (첫 실행 시에만)
@@ -443,7 +446,9 @@ def render_approval_ui_legacy():
 
 initialize_session_state()
 
+# ============================================================================
 # 사이드바
+# ============================================================================
 with st.sidebar:
     st.header("⚙️ 설정")
 
@@ -451,6 +456,22 @@ with st.sidebar:
     if auth_config.streamlit_auth_enabled:
         show_auth_status()
         st.divider()
+
+    # 화면 모드 선택
+    st.subheader("📱 화면 모드")
+    view_mode = st.radio(
+        "표시할 화면 선택",
+        ["💬 채팅", "⚙️ 옵션"],
+        index=0 if st.session_state.view_mode == "💬 채팅" else 1,
+        horizontal=True,
+        label_visibility="collapsed"
+    )
+
+    # 모드 변경 시 세션 상태 업데이트
+    if view_mode != st.session_state.view_mode:
+        st.session_state.view_mode = view_mode
+
+    st.divider()
 
     # 세션 정보
     st.info(f"""
@@ -467,7 +488,62 @@ with st.sidebar:
 
     st.divider()
 
-    # 새 대화 시작 버튼
+    # 에이전트 상태 표시 (간단하게)
+    if st.session_state.agent is not None:
+        st.success("✅ 에이전트 활성화됨")
+    else:
+        st.warning("⏳ 에이전트 초기화 중...")
+
+    st.divider()
+
+    st.caption(f"""
+**상태:**
+- 승인 대기: {'있음' if st.session_state.pending_approval else '없음'}
+- 메시지 수: {len(st.session_state.messages)}
+
+**Langfuse 추적:**
+[이 세션 보기](http://192.168.0.151:3000/sessions/{st.session_state.session_id})
+""")
+
+# ============================================================================
+# 메인 화면 - 사이드바 선택에 따라 조건부 렌더링
+# ============================================================================
+
+# 채팅 화면
+if st.session_state.view_mode == "💬 채팅":
+    # 승인 대기 중이면 먼저 표시
+    if render_approval_ui_refactored():
+        st.info("👆 위의 작업을 승인 또는 거부해주세요")
+        st.stop()
+
+    # 채팅 히스토리 표시
+    for msg in st.session_state.messages:
+        display_chat_message(
+            msg["role"],
+            msg["content"],
+            agent_name=msg.get("agent_name")
+        )
+        # 로그가 있으면 표시
+        if "logs" in msg and msg["logs"]:
+            with st.expander("📜 과정 로그 보기", expanded=False):
+                for log in msg["logs"]:
+                    st.markdown(log)
+
+    # 입력 영역 (항상 화면 하단에 고정)
+    # 텍스트 입력은 항상 표시 (고정 위치)
+    prompt = st.chat_input("메시지 입력...")
+
+# ============================================================================
+# 옵션 화면
+# ============================================================================
+elif st.session_state.view_mode == "⚙️ 옵션":
+    st.header("⚙️ 설정 및 옵션")
+
+    # ========================================================================
+    # 세션 관리
+    # ========================================================================
+    st.subheader("🔧 세션 관리")
+
     if st.button("🆕 새 대화 시작", use_container_width=True):
         # 새 session_id 생성
         old_session = st.session_state.session_id
@@ -481,81 +557,99 @@ with st.sidebar:
         st.success("새 대화를 시작했습니다!")
         st.rerun()
 
-    st.divider()
-
-    # 에이전트 상태 표시 및 재시작 버튼
-    if st.session_state.agent is not None:
-        st.success("✅ 에이전트 활성화됨")
-    else:
-        st.warning("⏳ 에이전트 초기화 중...")
-
-    if st.button("🔄 에이전트 재시작", use_container_width=True):
-        st.session_state.agent = create_agent()
-        st.session_state.agent_initialized = True
-        st.rerun()
+    st.caption("채팅 내역을 초기화하고 새 세션으로 시작합니다")
 
     st.divider()
 
-    if st.button("🗑️ 채팅 초기화", use_container_width=True):
-        st.session_state.messages = []
-        st.session_state.routing_history = []
-        st.session_state.pending_approval = None
-        st.rerun()
+    # ========================================================================
+    # 입력 방식 설정
+    # ========================================================================
+    st.subheader("📝 입력 방식")
 
-    st.divider()
-
-    st.caption(f"""
-**상태:**
-- 승인 대기: {'있음' if st.session_state.pending_approval else '없음'}
-
-**Langfuse 추적:**
-[이 세션 보기](http://192.168.0.151:3000/sessions/{st.session_state.session_id})
-""")
-
-# 메인
-st.divider()
-
-# 승인 대기 중이면 먼저 표시
-if render_approval_ui_refactored():
-    st.info("👆 위의 작업을 승인 또는 거부해주세요")
-    st.stop()
-
-# 채팅 히스토리
-for msg in st.session_state.messages:
-    display_chat_message(
-        msg["role"],
-        msg["content"],
-        agent_name=msg.get("agent_name")
+    # 입력 방식 선택
+    input_mode_option = st.radio(
+        "메시지 입력 방식 선택",
+        ["💬 텍스트", "🎤 음성"],
+        index=0 if st.session_state.input_mode == "💬 텍스트" else 1,
+        horizontal=True
     )
-    # 로그가 있으면 표시
-    if "logs" in msg and msg["logs"]:
-        with st.expander("📜 과정 로그 보기", expanded=False):
-            for log in msg["logs"]:
-                st.markdown(log)
 
-# 입력 방식 선택
-input_mode = st.radio(
-    "입력 방식 선택",
-    ["💬 텍스트", "🎤 음성"],
-    horizontal=True,
-    label_visibility="collapsed"
-)
+    # 선택 변경 시 세션 상태 업데이트
+    if input_mode_option != st.session_state.input_mode:
+        st.session_state.input_mode = input_mode_option
+        st.success(f"입력 방식이 {input_mode_option}(으)로 변경되었습니다!")
 
-# 입력 처리
+    # 음성 입력 모드일 때 음성 입력 위젯 표시
+    if st.session_state.input_mode == "🎤 음성":
+        st.divider()
+        st.caption("🎤 음성 입력 테스트")
+        audio_text = render_audio_input_widget("options_test")
+        if audio_text:
+            st.success(f"인식된 텍스트: {audio_text}")
+            st.info("💡 채팅 탭에서 음성 입력을 사용할 수 있습니다.")
+
+    st.divider()
+
+    # ========================================================================
+    # Manager 활성화 설정
+    # ========================================================================
+    st.subheader("🤖 Manager 활성화")
+
+    st.caption("사용할 Manager를 선택하세요. 변경 후 '적용' 버튼을 눌러야 합니다.")
+
+    col1, col2 = st.columns(2)
+    with col1:
+        enable_i = st.checkbox("🏠 Manager I (IoT)", value=st.session_state.enable_manager_i)
+        enable_m = st.checkbox("🧠 Manager M (메모리)", value=st.session_state.enable_manager_m)
+    with col2:
+        enable_s = st.checkbox("🔍 Manager S (검색)", value=st.session_state.enable_manager_s)
+        enable_t = st.checkbox("📅 Manager T (캘린더)", value=st.session_state.enable_manager_t)
+
+    # 변경사항 확인
+    has_changes = (
+        enable_i != st.session_state.enable_manager_i or
+        enable_m != st.session_state.enable_manager_m or
+        enable_s != st.session_state.enable_manager_s or
+        enable_t != st.session_state.enable_manager_t
+    )
+
+    if has_changes:
+        st.warning("⚠️ Manager 설정이 변경되었습니다. 적용하려면 아래 버튼을 클릭하세요.")
+
+        col_apply, col_cancel = st.columns(2)
+        with col_apply:
+            if st.button("✅ 변경사항 적용", use_container_width=True, type="primary"):
+                st.session_state.enable_manager_i = enable_i
+                st.session_state.enable_manager_m = enable_m
+                st.session_state.enable_manager_s = enable_s
+                st.session_state.enable_manager_t = enable_t
+                st.session_state.agent = create_agent()
+                st.success("✅ Manager 설정이 적용되었습니다!")
+                st.rerun()
+
+        with col_cancel:
+            if st.button("↩️ 취소", use_container_width=True):
+                st.info("변경사항이 취소되었습니다.")
+                st.rerun()
+    else:
+        st.success("✅ 현재 활성화된 Manager 상태입니다.")
+
+# ============================================================================
+# 입력 처리 (화면 모드와 무관하게 실행)
+# ============================================================================
+
+# prompt 변수 초기화
 prompt = None
 
-if input_mode == "💬 텍스트":
-    # 텍스트 입력
-    prompt = st.chat_input("메시지 입력...")
-else:
-    # 음성 입력
-    st.caption("🎤 녹음 버튼을 눌러 음성을 입력하세요")
+# 음성 입력 처리 (채팅 화면이고 음성 모드일 때만)
+if st.session_state.view_mode == "💬 채팅" and st.session_state.input_mode == "🎤 음성":
+    st.caption("🎤 아래 녹음 버튼을 눌러 음성을 입력하세요")
     audio_text = render_audio_input_widget("main_chat")
     if audio_text:
         prompt = audio_text
 
-# 입력이 있을 때 처리
-if prompt:
+# 입력이 있을 때 처리 (채팅 화면에서만)
+if st.session_state.view_mode == "💬 채팅" and prompt:
     if st.session_state.agent is None:
         st.error("❌ 에이전트 초기화에 실패했습니다. 사이드바에서 '에이전트 재시작' 버튼을 눌러주세요.")
         st.stop()
