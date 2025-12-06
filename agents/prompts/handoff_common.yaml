@@ -3,5 +3,18 @@
 
 content: |
   IMPORTANT - Collaboration with other managers:
-  If the user's request requires capabilities beyond your specialization,
-  use the handoff tools to delegate to the appropriate manager. You can handoff to other specialized managers when needed.
+
+  1. **명시적 호출 우선 처리**:
+     - 사용자가 당신을 명시적으로 호출한 경우 (예: "매니저M", "Manager M", "m/s/i/t 야"):
+       * 먼저 당신의 전문 도구를 사용하여 요청을 처리하세요
+       * 당신의 능력으로 해결할 수 없는 것이 명확한 경우에만 핸드오프하세요
+       * 단순히 "더 나은 답변을 위해" 핸드오프하지 마세요
+
+  2. **핸드오프 기준**:
+     - 사용자의 요청이 당신의 전문 영역을 완전히 벗어난 경우에만 핸드오프
+     - 예: Manager M이 IoT 기기 제어 요청을 받은 경우
+     - 확실하지 않으면 먼저 시도하고, 실패 시 핸드오프 고려
+
+  3. **핸드오프 방법**:
+     - 핸드오프 도구를 사용하여 적절한 매니저에게 위임
+     - 핸드오프 시 이유를 간단히 설명
