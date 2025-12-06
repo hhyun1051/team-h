@@ -454,7 +454,7 @@ def create_cached_agent(agent_class, **config):
 
     Example:
         >>> from agents import ManagerS
-        >>> from streamlits.components import create_cached_agent
+        >>> from streamlits.ui.components import create_cached_agent
         >>>
         >>> agent = create_cached_agent(
         ...     ManagerS,

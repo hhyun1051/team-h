@@ -113,7 +113,7 @@ def simple_auth(password: str = "teamh2024", expiry_days: int = 365) -> bool:
         인증 성공 여부
 
     Example:
-        >>> from streamlits.auth import simple_auth
+        >>> from streamlits.core.auth import simple_auth
         >>>
         >>> if not simple_auth(password="your_password"):
         >>>     st.stop()

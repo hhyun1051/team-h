@@ -262,7 +262,8 @@ class ManagerMMemory:
     def get_all_memories(
         self,
         user_id: str,
-        memory_type: Optional[str] = None
+        memory_type: Optional[str] = None,
+        limit: int = 100
     ) -> List[Dict[str, Any]]:
         """
         사용자의 모든 기억 조회
@@ -270,6 +271,7 @@ class ManagerMMemory:
         Args:
             user_id: 사용자 ID
             memory_type: 기억 유형 필터 (옵션)
+            limit: 최대 반환 개수 (기본값: 100)
 
         Returns:
             모든 기억 리스트
@@ -297,7 +299,7 @@ class ManagerMMemory:
             scroll_results = self.client.scroll(
                 collection_name=self.collection_name,
                 scroll_filter=query_filter,
-                limit=100,  # 한 번에 가져올 최대 개수
+                limit=limit,  # 파라미터로 받은 limit 사용
                 with_payload=True,
                 with_vectors=False,
             )
@@ -317,6 +319,37 @@ class ManagerMMemory:
         except Exception as e:
             print(f"[❌] Failed to get all memories: {e}")
             raise
+
+    def get_memory_by_id(self, memory_id: str) -> Optional[Dict[str, Any]]:
+        """
+        ID로 특정 기억 조회
+
+        Args:
+            memory_id: 조회할 기억의 ID
+
+        Returns:
+            기억 정보 (id, content, type 등), 없으면 None
+        """
+        try:
+            result = self.client.retrieve(
+                collection_name=self.collection_name,
+                ids=[memory_id],
+            )
+
+            if result and len(result) > 0:
+                point = result[0]
+                return {
+                    "id": point.id,
+                    "content": point.payload.get("content", ""),
+                    "type": point.payload.get("memory_type", "unknown"),
+                    "metadata": point.payload,
+                }
+            else:
+                return None
+
+        except Exception as e:
+            print(f"[❌] Failed to retrieve memory {memory_id}: {e}")
+            return None
 
     def delete_memory(self, memory_id: str) -> Dict[str, Any]:
         """

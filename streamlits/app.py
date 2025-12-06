@@ -38,19 +38,20 @@ except ImportError as e:
     st.stop()
 
 # 공통 컴포넌트 import
-from streamlits.components import (
+from streamlits.ui.components import (
     display_chat_message,
     create_session_state_defaults,
     render_error_expander,
     create_cached_agent,
     render_audio_input_widget,
 )
-from streamlits.config import (
+from streamlits.ui.approval import render_approval_ui_refactored
+from streamlits.core.config import (
     PAGE_CONFIGS,
     DEFAULT_VALUES,
     get_env_defaults,
 )
-from streamlits.auth import simple_auth, show_auth_status
+from streamlits.core.auth import simple_auth, show_auth_status
 from config.settings import auth_config
 
 # 페이지 설정
@@ -195,10 +196,12 @@ def extract_response(response: Dict[str, Any]) -> tuple[str, Optional[str]]:
 
 
 # ============================================================================
-# HITL 승인 UI
+# HITL 승인 UI (Legacy - 사용 안 함)
 # ============================================================================
+# 새로운 approval_ui_refactored.py 사용
+# 기존 코드는 백업용으로 보관
 
-def render_approval_ui():
+def render_approval_ui_legacy():
     """HITL 승인 UI"""
     if not st.session_state.pending_approval:
         return False
@@ -276,7 +279,7 @@ def render_approval_ui():
                             edited_tool_name = st.session_state.get(f"edit_tool_name_{idx}", tool_name)
 
                             # 모든 action_requests에 대해 decisions 생성
-                            # 현재 편집 중인 것은 edit, 나머지는 approve
+                            # 현재 편집 중인 것은 edit, 나머지는 거부
                             num_actions = len(action_requests)
                             decisions = []
                             for i in range(num_actions):
@@ -289,7 +292,7 @@ def render_approval_ui():
                                         }
                                     })
                                 else:
-                                    decisions.append({"type": "approve"})
+                                    decisions.append({"type": "reject", "message": "사용자가 다른 작업만 편집함"})
 
                             result = st.session_state.agent.invoke_command(
                                 Command(resume={"decisions": decisions}),
@@ -344,9 +347,14 @@ def render_approval_ui():
                         target_col = col1 if num_buttons >= 1 else st
                         if target_col.button("✅ 승인", key=f"approve_{idx}", use_container_width=True):
                             try:
-                                # 모든 action_requests에 대해 decisions 생성
+                                # 현재 작업만 승인, 나머지는 거부
                                 num_actions = len(action_requests)
-                                decisions = [{"type": "approve"} for _ in range(num_actions)]
+                                decisions = []
+                                for i in range(num_actions):
+                                    if i == idx:
+                                        decisions.append({"type": "approve"})
+                                    else:
+                                        decisions.append({"type": "reject", "message": "사용자가 다른 작업만 승인함"})
                                 result = st.session_state.agent.invoke_command(
                                     Command(resume={"decisions": decisions}),
                                     config=approval_data["config"],
@@ -390,9 +398,14 @@ def render_approval_ui():
                             reject_reason = st.session_state.get(f"reject_reason_{idx}", "사용자가 거부했습니다")
 
                             try:
-                                # 모든 action_requests에 대해 decisions 생성
+                                # 현재 작업만 거부, 나머지는 거부 (모두 거부)
                                 num_actions = len(action_requests)
-                                decisions = [{"type": "reject", "message": reject_reason} for _ in range(num_actions)]
+                                decisions = []
+                                for i in range(num_actions):
+                                    if i == idx:
+                                        decisions.append({"type": "reject", "message": reject_reason})
+                                    else:
+                                        decisions.append({"type": "reject", "message": "사용자가 다른 작업만 처리함"})
                                 result = st.session_state.agent.invoke_command(
                                     Command(resume={"decisions": decisions}),
                                     config=approval_data["config"],
@@ -503,7 +516,7 @@ with st.sidebar:
 st.divider()
 
 # 승인 대기 중이면 먼저 표시
-if render_approval_ui():
+if render_approval_ui_refactored():
     st.info("👆 위의 작업을 승인 또는 거부해주세요")
     st.stop()
 

@@ -65,8 +65,8 @@ class ManagerM(ManagerBase):
         # HITL 미들웨어 생성
         hitl_middleware = HumanInTheLoopMiddleware(
             interrupt_on={
-                # 쓰기/수정/삭제 작업만 승인 필요
-                "add_memory": True,
+                # 수정/삭제 작업만 승인 필요
+                "add_memory": False,
                 "update_memory": True,
                 "delete_memory": True,
                 "delete_all_memories": True,
@@ -117,7 +117,7 @@ class ManagerM(ManagerBase):
         @tool
         def add_memory(
             content: str,
-            memory_type: str = "general",
+            memory_type: str = "food",
             runtime: ToolRuntime[TeamHContext] = None
         ) -> str:
             """
@@ -125,7 +125,7 @@ class ManagerM(ManagerBase):
 
             Args:
                 content: The content of the memory to add
-                memory_type: Type of memory (general, preference, habit, interaction, etc.)
+                memory_type: Type of memory (food) (now only food)
                 runtime: Automatically injected runtime context (contains user_id)
 
             Returns:
@@ -282,11 +282,8 @@ class ManagerM(ManagerBase):
                 Confirmation message
             """
             try:
-                user_id = runtime.context.user_id if runtime else "default_user"
-
                 result = self.memory.delete_memory(
                     memory_id=memory_id,
-                    user_id=user_id,
                 )
                 return f"✅ Memory deleted successfully: {result}"
             except Exception as e:

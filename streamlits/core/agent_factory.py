@@ -3,16 +3,16 @@ Streamlit Agent Factory - 에이전트 캐싱 및 생성
 
 ⚠️ DEPRECATED: 이 파일은 더 이상 사용되지 않습니다.
 
-대신 streamlits/components.py의 create_cached_agent() 함수를 사용하세요.
+대신 streamlits/ui/components.py의 create_cached_agent() 함수를 사용하세요.
 
 마이그레이션 가이드:
 -----------------
 Before (agent_factory.py):
-    from streamlits.agent_factory import create_cached_manager_s_agent
+    from streamlits.core.agent_factory import create_cached_manager_s_agent
     agent = create_cached_manager_s_agent(model_name="gpt-4o-mini", ...)
 
-After (components.py):
-    from streamlits.components import create_cached_agent
+After (ui/components.py):
+    from streamlits.ui.components import create_cached_agent
     from agents import ManagerS
     agent = create_cached_agent(ManagerS, model_name="gpt-4o-mini", ...)
 
