@@ -535,33 +535,3 @@ class ManagerMMemory:
             context += f"   Created: {created}\n\n"
 
         return context
-
-
-# 싱글톤 인스턴스 (선택적 사용)
-_manager_m_memory_instance = None
-
-
-def get_manager_m_memory(
-    embedder_url: Optional[str] = None,
-    qdrant_url: Optional[str] = None,
-    qdrant_api_key: Optional[str] = None,
-) -> ManagerMMemory:
-    """
-    Manager M 메모리 싱글톤 인스턴스 반환
-
-    Args:
-        embedder_url: FastAPI 임베딩 서버 URL
-        qdrant_url: Qdrant 서버 URL
-        qdrant_api_key: Qdrant API 키
-
-    Returns:
-        ManagerMMemory 인스턴스
-    """
-    global _manager_m_memory_instance
-    if _manager_m_memory_instance is None:
-        _manager_m_memory_instance = ManagerMMemory(
-            embedder_url=embedder_url,
-            qdrant_url=qdrant_url,
-            qdrant_api_key=qdrant_api_key,
-        )
-    return _manager_m_memory_instance
