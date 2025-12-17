@@ -27,7 +27,7 @@ sys.path.insert(0, str(project_root))
 # Agents import (__init__.py 활용)
 from agents import ManagerBase
 from agents.context import TeamHContext
-from langchain.agents.middleware import HumanInTheLoopMiddleware
+from agents.middleware import HumanInTheLoopMiddleware
 from langchain.tools import tool, ToolRuntime
 from pydantic import BaseModel, Field
 

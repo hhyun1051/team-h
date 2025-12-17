@@ -19,7 +19,14 @@ Usage:
 from .langfuse_logging import LangfuseToolLoggingMiddleware
 from .error_handler import ToolErrorHandlerMiddleware
 
+# LangChain built-in middlewares (re-exported for convenience)
+from langchain.agents.middleware import HumanInTheLoopMiddleware
+
 __all__ = [
+    # Custom middlewares
     "LangfuseToolLoggingMiddleware",
     "ToolErrorHandlerMiddleware",
+
+    # Built-in middlewares (re-exported)
+    "HumanInTheLoopMiddleware",
 ]
