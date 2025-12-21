@@ -203,6 +203,46 @@ class AuthConfig(BaseSettings):
     )
 
 
+class LLMConfig(BaseSettings):
+    """LLM 모델 설정"""
+
+    llm_provider: Literal["openai", "vllm", "ollama"] = Field(
+        default="openai",
+        description="LLM 제공자: 'openai', 'vllm', 'ollama'"
+    )
+    llm_model_name: str = Field(
+        default="gpt-4.1-mini",
+        description="사용할 LLM 모델 이름"
+    )
+    llm_temperature: float = Field(
+        default=0.7,
+        description="LLM temperature 설정"
+    )
+
+    # vLLM 설정
+    vllm_base_url: str = Field(
+        default="http://localhost:8000/v1",
+        description="vLLM 서버 URL (OpenAI compatible API)"
+    )
+    vllm_api_key: str = Field(
+        default="EMPTY",
+        description="vLLM API 키 (로컬 서버는 보통 'EMPTY')"
+    )
+
+    # Ollama 설정
+    ollama_base_url: str = Field(
+        default="http://localhost:11434",
+        description="Ollama 서버 URL"
+    )
+
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        case_sensitive=False,
+        extra="ignore"
+    )
+
+
 class Settings:
     """
     통합 설정 클래스
@@ -220,6 +260,7 @@ class Settings:
         self.google_calendar = GoogleCalendarConfig()
         self.langfuse = LangfuseConfig()
         self.auth = AuthConfig()
+        self.llm = LLMConfig()
 
     def validate_all(self) -> bool:
         """모든 설정 검증"""
@@ -291,6 +332,7 @@ homeassistant_config = settings.homeassistant
 google_calendar_config = settings.google_calendar
 langfuse_config = settings.langfuse
 auth_config = settings.auth
+llm_config = settings.llm
 
 
 if __name__ == "__main__":

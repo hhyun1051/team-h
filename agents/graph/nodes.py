@@ -6,6 +6,7 @@ from typing import Optional, Dict, Any, List
 from langgraph.graph import END
 from langgraph.types import Command
 from langchain_core.messages import AIMessage, HumanMessage
+import re
 
 from .state import TeamHState
 

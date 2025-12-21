@@ -30,9 +30,6 @@ env/
 .env
 *.env
 
-# Tests
-tests/
-
 # IDE
 .vscode/
 .idea/

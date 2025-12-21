@@ -16,7 +16,6 @@ from langgraph.graph import StateGraph
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.checkpoint.postgres import PostgresSaver
 from langchain_core.messages import HumanMessage
-from langchain.chat_models import init_chat_model
 from langchain_core.tools import tool
 import psycopg
 from psycopg_pool import ConnectionPool
@@ -30,6 +29,9 @@ from langfuse.langchain import CallbackHandler
 from agents import ManagerI, ManagerM, ManagerS, ManagerT
 from agents.context import TeamHContext
 from agents.middleware import LangfuseToolLoggingMiddleware, ToolErrorHandlerMiddleware
+
+# Utils import
+from utils.llm_factory import create_llm
 
 # Local imports
 from .state import TeamHState, AgentRouting
@@ -176,6 +178,232 @@ class TeamHGraph(NodesMixin):
         print(f"[✅] Team-H Graph System initialized successfully")
         print(f"    - Max handoffs: {self.max_handoffs}")
 
+    # ========================================================================
+    # 🎯 핵심: 그래프 구조 정의
+    # ========================================================================
+
+    def _build_graph(self) -> StateGraph:
+        """
+        Team-H 에이전트 그래프 빌드
+
+        Nodes:
+          - router: 요청 분석 및 라우팅 (첫 턴만)
+          - manager_i: IoT 디바이스 제어 (Home Assistant)
+          - manager_m: 메모리 관리 (Qdrant 벡터 DB)
+          - manager_s: 웹 검색 (Tavily API)
+          - manager_t: 일정/시간 관리 (Google Calendar)
+
+        Flow:
+          1. 사용자 메시지 → router
+          2. router → 적절한 manager 선택
+          3. manager 실행 → 다른 manager로 handoff 가능
+          4. 최대 {self.max_handoffs}번까지 handoff
+        """
+        workflow = StateGraph(TeamHState)
+
+        # 노드 추가
+        workflow.add_node("router", self._router_node)
+
+        if self.manager_i:
+            workflow.add_node("manager_i", self._manager_i_node)
+
+        if self.manager_m:
+            workflow.add_node("manager_m", self._manager_m_node)
+
+        if self.manager_s:
+            workflow.add_node("manager_s", self._manager_s_node)
+
+        if self.manager_t:
+            workflow.add_node("manager_t", self._manager_t_node)
+
+        # 시작점: 라우터
+        workflow.set_entry_point("router")
+        
+        # Command 패턴을 사용하므로 conditional edges 불필요
+
+        # 컴파일 - PostgresSaver 또는 MemorySaver 사용
+        return workflow.compile(checkpointer=self.checkpointer)
+
+    # ========================================================================
+    # 외부 인터페이스
+    # ========================================================================
+
+    @observe(name="team-h-graph-invoke", capture_input=True, capture_output=True)
+    def invoke(
+        self,
+        message: str,
+        user_id: str = "default_user",
+        thread_id: str = "default",
+        session_id: Optional[str] = None,
+        callbacks: Optional[List] = None,
+    ) -> Dict[str, Any]:
+        """
+        그래프 실행
+
+        Args:
+            message: 사용자 메시지
+            user_id: 사용자 ID (예: "user-123", 로그인 시스템에서 제공)
+            thread_id: PostgreSQL checkpoint thread ID (대화 세션 식별)
+            session_id: Langfuse session ID (옵션, 없으면 thread_id 사용)
+            callbacks: Langfuse CallbackHandler 등의 콜백 리스트
+
+        Returns:
+            최종 상태
+
+        Note:
+            통합 ID 전략:
+            - thread_id: PostgreSQL checkpoint (대화 저장/재개)
+            - session_id: Langfuse 추적 (없으면 thread_id 사용)
+            - user_id: 사용자 식별 (PostgreSQL + Langfuse)
+        """
+        # session_id가 없으면 thread_id를 session_id로 사용 (통합 전략)
+        if session_id is None:
+            session_id = thread_id
+
+        # Langfuse CallbackHandler 자동 생성
+        if callbacks is None and self.langfuse_client:
+            try:
+                # v3: session_id, user_id는 metadata로 전달
+                langfuse_handler = CallbackHandler()
+                callbacks = [langfuse_handler]
+            except Exception as e:
+                print(f"[⚠️] Failed to create Langfuse handler: {e}")
+                callbacks = []
+
+        # Context 생성 (TeamHContext)
+        context = TeamHContext(
+            user_id=user_id,
+            thread_id=thread_id,
+            session_id=session_id
+        )
+
+        config = {
+            "configurable": {"thread_id": thread_id},
+            "callbacks": callbacks or [],
+            "metadata": {
+                "langfuse_session_id": session_id,  # Langfuse v3: metadata로 session_id 전달
+                "langfuse_user_id": user_id,        # Langfuse v3: metadata로 user_id 전달
+                "langfuse_tags": ["team-h", "graph"],
+            }
+        }
+
+        initial_state = {
+            "messages": [HumanMessage(content=message)],
+            "handoff_count": 0,
+        }
+
+        result = self.graph.invoke(initial_state, config, context=context)
+        return result
+
+    def invoke_command(
+        self,
+        command: Any,
+        config: Dict[str, Any],
+        user_id: str = "default_user",
+        thread_id: str = "default",
+        session_id: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """
+        Command를 사용하여 그래프 재개 (HITL 지원)
+
+        Args:
+            command: LangGraph Command 객체 (resume 등)
+            config: 그래프 설정 (thread_id 포함)
+            user_id: 사용자 ID
+            thread_id: 스레드 ID
+            session_id: Langfuse 세션 ID (옵션)
+
+        Returns:
+            그래프 실행 결과
+        """
+        # Context 생성 (tools에서 runtime.context로 접근 가능)
+        context = TeamHContext(
+            user_id=user_id,
+            thread_id=thread_id,
+            session_id=session_id or thread_id
+        )
+
+        result = self.graph.invoke(command, config, context=context)
+        return result
+
+    @observe(name="team-h-graph-stream", capture_input=True, capture_output=True)
+    def stream(
+        self,
+        message: str,
+        user_id: str = "default_user",
+        thread_id: str = "default",
+        session_id: Optional[str] = None,
+        callbacks: Optional[List] = None,
+    ):
+        """
+        그래프 스트리밍 실행
+
+        Args:
+            message: 사용자 메시지
+            user_id: 사용자 ID (예: "user-123")
+            thread_id: PostgreSQL checkpoint thread ID (대화 세션 식별)
+            session_id: Langfuse session ID (옵션, 없으면 thread_id 사용)
+            callbacks: Langfuse CallbackHandler 등의 콜백 리스트
+
+        Yields:
+            각 노드 실행 결과
+        """
+        # session_id가 없으면 thread_id를 session_id로 사용
+        if session_id is None:
+            session_id = thread_id
+
+        # Langfuse CallbackHandler 자동 생성
+        if callbacks is None and self.langfuse_client:
+            try:
+                # v3: session_id, user_id는 metadata로 전달
+                langfuse_handler = CallbackHandler()
+                callbacks = [langfuse_handler]
+            except Exception as e:
+                print(f"[⚠️] Failed to create Langfuse handler: {e}")
+                callbacks = []
+
+        # Context 생성 (TeamHContext)
+        context = TeamHContext(
+            user_id=user_id,
+            thread_id=thread_id,
+            session_id=session_id
+        )
+
+        config = {
+            "configurable": {"thread_id": thread_id},
+            "callbacks": callbacks or [],
+            "metadata": {
+                "langfuse_session_id": session_id,  # Langfuse v3: metadata로 session_id 전달
+                "langfuse_user_id": user_id,        # Langfuse v3: metadata로 user_id 전달
+                "langfuse_tags": ["team-h", "graph"],
+            }
+        }
+
+        initial_state = {
+            "messages": [HumanMessage(content=message)],
+            "handoff_count": 0,
+        }
+
+        for chunk in self.graph.stream(initial_state, config, context=context):
+            yield chunk
+
+    def get_graph_visualization(self) -> str:
+        """
+        그래프를 Mermaid 다이어그램으로 반환
+
+        Returns:
+            Mermaid 다이어그램 문자열
+        """
+        try:
+            from langgraph.graph import draw_mermaid
+            return draw_mermaid(self.graph)
+        except Exception as e:
+            return f"Visualization not available: {e}"
+
+    # ========================================================================
+    # 초기화 헬퍼 메서드 (내부용 - IDE에서 접어두고 볼 것)
+    # ========================================================================
+
     def _init_langfuse(self):
         """Langfuse 초기화 (환경 변수 기반)"""
         try:
@@ -254,12 +482,8 @@ class TeamHGraph(NodesMixin):
             self.checkpointer = MemorySaver()
 
     def _init_router_llm(self):
-        """라우터 LLM 초기화"""
-        self.router_llm = init_chat_model(
-            model=self.model_name,
-            model_provider="openai",
-            temperature=self.temperature,
-        )
+        """라우터 LLM 초기화 (중앙화된 factory 사용)"""
+        self.router_llm = create_llm()
 
         # 프롬프트 파일 경로
         prompts_dir = Path(__file__).parent.parent / "prompts"
@@ -521,207 +745,3 @@ class TeamHGraph(NodesMixin):
             except Exception as e:
                 print(f"[⚠️] Manager T initialization failed: {e}")
                 self.manager_t = None
-
-    def _build_graph(self) -> StateGraph:
-        """그래프 빌드 (Command 패턴 사용)"""
-        workflow = StateGraph(TeamHState)
-
-        # 노드 추가
-        workflow.add_node("router", self._router_node)
-
-        if self.manager_i:
-            workflow.add_node("manager_i", self._manager_i_node)
-
-        if self.manager_m:
-            workflow.add_node("manager_m", self._manager_m_node)
-
-        if self.manager_s:
-            workflow.add_node("manager_s", self._manager_s_node)
-
-        if self.manager_t:
-            workflow.add_node("manager_t", self._manager_t_node)
-
-        # 시작점: 라우터
-        workflow.set_entry_point("router")
-
-        # Command 패턴을 사용하므로 conditional edges 불필요
-        # 각 노드에서 Command의 goto 파라미터로 다음 노드를 직접 지정
-
-        # 컴파일 - PostgresSaver 또는 MemorySaver 사용
-        return workflow.compile(checkpointer=self.checkpointer)
-
-    # ========================================================================
-    # 외부 인터페이스
-    # ========================================================================
-
-    @observe(name="team-h-graph-invoke", capture_input=True, capture_output=True)
-    def invoke(
-        self,
-        message: str,
-        user_id: str = "default_user",
-        thread_id: str = "default",
-        session_id: Optional[str] = None,
-        callbacks: Optional[List] = None,
-    ) -> Dict[str, Any]:
-        """
-        그래프 실행
-
-        Args:
-            message: 사용자 메시지
-            user_id: 사용자 ID (예: "user-123", 로그인 시스템에서 제공)
-            thread_id: PostgreSQL checkpoint thread ID (대화 세션 식별)
-            session_id: Langfuse session ID (옵션, 없으면 thread_id 사용)
-            callbacks: Langfuse CallbackHandler 등의 콜백 리스트
-
-        Returns:
-            최종 상태
-
-        Note:
-            통합 ID 전략:
-            - thread_id: PostgreSQL checkpoint (대화 저장/재개)
-            - session_id: Langfuse 추적 (없으면 thread_id 사용)
-            - user_id: 사용자 식별 (PostgreSQL + Langfuse)
-        """
-        # session_id가 없으면 thread_id를 session_id로 사용 (통합 전략)
-        if session_id is None:
-            session_id = thread_id
-
-        # Langfuse CallbackHandler 자동 생성
-        if callbacks is None and self.langfuse_client:
-            try:
-                # v3: session_id, user_id는 metadata로 전달
-                langfuse_handler = CallbackHandler()
-                callbacks = [langfuse_handler]
-            except Exception as e:
-                print(f"[⚠️] Failed to create Langfuse handler: {e}")
-                callbacks = []
-
-        # Context 생성 (TeamHContext)
-        context = TeamHContext(
-            user_id=user_id,
-            thread_id=thread_id,
-            session_id=session_id
-        )
-
-        config = {
-            "configurable": {"thread_id": thread_id},
-            "callbacks": callbacks or [],
-            "metadata": {
-                "langfuse_session_id": session_id,  # Langfuse v3: metadata로 session_id 전달
-                "langfuse_user_id": user_id,        # Langfuse v3: metadata로 user_id 전달
-                "langfuse_tags": ["team-h", "graph"],
-            }
-        }
-
-        initial_state = {
-            "messages": [HumanMessage(content=message)],
-            "handoff_count": 0,
-        }
-
-        result = self.graph.invoke(initial_state, config, context=context)
-        return result
-
-    def invoke_command(
-        self,
-        command: Any,
-        config: Dict[str, Any],
-        user_id: str = "default_user",
-        thread_id: str = "default",
-        session_id: Optional[str] = None,
-    ) -> Dict[str, Any]:
-        """
-        Command를 사용하여 그래프 재개 (HITL 지원)
-
-        Args:
-            command: LangGraph Command 객체 (resume 등)
-            config: 그래프 설정 (thread_id 포함)
-            user_id: 사용자 ID
-            thread_id: 스레드 ID
-            session_id: Langfuse 세션 ID (옵션)
-
-        Returns:
-            그래프 실행 결과
-        """
-        # Context 생성 (tools에서 runtime.context로 접근 가능)
-        context = TeamHContext(
-            user_id=user_id,
-            thread_id=thread_id,
-            session_id=session_id or thread_id
-        )
-
-        result = self.graph.invoke(command, config, context=context)
-        return result
-
-    @observe(name="team-h-graph-stream", capture_input=True, capture_output=True)
-    def stream(
-        self,
-        message: str,
-        user_id: str = "default_user",
-        thread_id: str = "default",
-        session_id: Optional[str] = None,
-        callbacks: Optional[List] = None,
-    ):
-        """
-        그래프 스트리밍 실행
-
-        Args:
-            message: 사용자 메시지
-            user_id: 사용자 ID (예: "user-123")
-            thread_id: PostgreSQL checkpoint thread ID (대화 세션 식별)
-            session_id: Langfuse session ID (옵션, 없으면 thread_id 사용)
-            callbacks: Langfuse CallbackHandler 등의 콜백 리스트
-
-        Yields:
-            각 노드 실행 결과
-        """
-        # session_id가 없으면 thread_id를 session_id로 사용
-        if session_id is None:
-            session_id = thread_id
-
-        # Langfuse CallbackHandler 자동 생성
-        if callbacks is None and self.langfuse_client:
-            try:
-                # v3: session_id, user_id는 metadata로 전달
-                langfuse_handler = CallbackHandler()
-                callbacks = [langfuse_handler]
-            except Exception as e:
-                print(f"[⚠️] Failed to create Langfuse handler: {e}")
-                callbacks = []
-
-        # Context 생성 (TeamHContext)
-        context = TeamHContext(
-            user_id=user_id,
-            thread_id=thread_id,
-            session_id=session_id
-        )
-
-        config = {
-            "configurable": {"thread_id": thread_id},
-            "callbacks": callbacks or [],
-            "metadata": {
-                "langfuse_session_id": session_id,  # Langfuse v3: metadata로 session_id 전달
-                "langfuse_user_id": user_id,        # Langfuse v3: metadata로 user_id 전달
-                "langfuse_tags": ["team-h", "graph"],
-            }
-        }
-
-        initial_state = {
-            "messages": [HumanMessage(content=message)],
-            "handoff_count": 0,
-        }
-
-        for chunk in self.graph.stream(initial_state, config, context=context):
-            yield chunk
-
-    def get_graph_visualization(self) -> str:
-        """
-        그래프를 Mermaid 다이어그램으로 반환
-
-        Returns:
-            Mermaid 다이어그램 문자열
-        """
-        try:
-            from langgraph.graph import draw_mermaid
-            return draw_mermaid(self.graph)
-        except Exception as e:
-            return f"Visualization not available: {e}"

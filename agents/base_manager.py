@@ -15,8 +15,8 @@ from abc import ABC, abstractmethod
 from typing import Optional, List, Dict, Any
 from pathlib import Path
 from langchain.agents import create_agent
-from langchain.chat_models import init_chat_model
 from agents.context import TeamHContext
+from utils.llm_factory import create_llm
 
 class ManagerBase(ABC):
     """모든 매니저 에이전트의 베이스 클래스"""
@@ -64,12 +64,8 @@ class ManagerBase(ABC):
             self.tools.extend(additional_tools)
             print(f"[➕] Added {len(additional_tools)} additional tools (handoff tools)")
 
-        # LLM 모델 생성
-        model = init_chat_model(
-            model=self.model_name,
-            model_provider="openai",
-            temperature=self.temperature,
-        )
+        # LLM 모델 생성 (중앙화된 factory 사용)
+        model = create_llm()
 
         # 시스템 프롬프트 생성
         base_prompt = self._get_base_prompt()
