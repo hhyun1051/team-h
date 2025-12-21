@@ -9,7 +9,7 @@ import json
 
 # vLLM 서버 설정
 VLLM_URL = "http://100.91.240.35:8002/v1/completions"
-MODEL_NAME = "kanana-2-30b-a3b-thinking"
+MODEL_NAME = "gpt-oss-120b"
 
 # Tool calling을 유도하는 프롬프트
 prompt = """You are a helpful assistant with access to the following function:
