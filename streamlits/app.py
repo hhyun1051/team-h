@@ -5,6 +5,7 @@ Streamlit HITL UI - Team-H Graph
 """
 
 import sys
+import os
 from pathlib import Path
 import streamlit as st
 from typing import Dict, Any, Optional
@@ -42,7 +43,6 @@ from streamlits.ui.components import (
     display_chat_message,
     create_session_state_defaults,
     render_error_expander,
-    create_cached_agent,
     render_audio_input_widget,
 )
 from streamlits.ui.approval import render_approval_ui_refactored
@@ -53,6 +53,9 @@ from streamlits.core.config import (
 )
 from streamlits.core.auth import simple_auth, show_auth_status
 from config.settings import auth_config
+
+# FastAPI 클라이언트 import
+from streamlits.utils.fastapi_client import FastAPIClient
 
 # 페이지 설정
 page_config = PAGE_CONFIGS["team_h"]
@@ -83,9 +86,7 @@ st.caption(page_config["caption"])
 # ============================================================================
 
 def initialize_session_state():
-    """세션 상태 초기화 및 에이전트 자동 생성"""
-    env_defaults = get_env_defaults()
-
+    """세션 상태 초기화 (FastAPI 클라이언트 사용)"""
     # 브라우저 세션당 고유 session_id 생성 (통합 ID 전략)
     # session_id = PostgreSQL thread_id = Langfuse session_id
     if "session_id" not in st.session_state:
@@ -94,81 +95,21 @@ def initialize_session_state():
 
     create_session_state_defaults(
         messages=[],
-        agent=None,
         user_id=DEFAULT_VALUES["user_id"],
         thread_id=st.session_state.session_id,  # session_id를 thread_id로 사용
-        routing_history=[],
         pending_approval=None,
-        # Home Assistant 설정 (Manager I용)
-        homeassistant_url=env_defaults["homeassistant_url"],
-        homeassistant_token=env_defaults["homeassistant_token"],
-        tavily_api_key=env_defaults["tavily_api_key"],
-        google_credentials_path=env_defaults["google_credentials_path"],
-        google_token_path=env_defaults["google_token_path"],
-        # Manager M (Qdrant + Embedding) 설정
-        embedding_type=env_defaults["embedding_type"],
-        embedder_url=env_defaults["embedder_url"],
-        openai_api_key=env_defaults["openai_api_key"],
-        embedding_dims=env_defaults["embedding_dims"],
-        qdrant_url=env_defaults["qdrant_url"],
-        qdrant_api_key=env_defaults["qdrant_api_key"],
-        m_collection_name=env_defaults["m_collection_name"],
-        enable_manager_i=True,
-        enable_manager_m=True,
-        enable_manager_s=True,
-        enable_manager_t=True,
-        agent_initialized=False,  # 자동 초기화 완료 플래그
         # UI 설정
         view_mode="💬 채팅",  # 화면 모드 (채팅/옵션)
         input_mode="💬 텍스트",  # 입력 방식 (텍스트/음성)
+        # FastAPI 클라이언트
+        api_client=FastAPIClient(base_url=os.getenv("FASTAPI_URL", "http://localhost:8000")),
     )
 
-    # 에이전트 자동 초기화 (첫 실행 시에만)
-    if st.session_state.agent is None and not st.session_state.agent_initialized:
-        st.session_state.agent = create_agent()
-        st.session_state.agent_initialized = True
-
 
 # ============================================================================
-# 에이전트 생성
+# Agent는 FastAPI 서버에서 관리
+# Streamlit은 단순 UI 클라이언트로 동작
 # ============================================================================
-
-def create_agent():
-    """Team-H Graph 에이전트 생성 (캐싱 적용)"""
-    try:
-        with st.spinner("초기화 중..."):
-            agent = create_cached_agent(
-                TeamHGraph,
-                enable_manager_i=st.session_state.enable_manager_i,
-                enable_manager_m=st.session_state.enable_manager_m,
-                enable_manager_s=st.session_state.enable_manager_s,
-                enable_manager_t=st.session_state.enable_manager_t,
-                # Home Assistant 설정 (Manager I용)
-                homeassistant_url=st.session_state.homeassistant_url,
-                homeassistant_token=st.session_state.homeassistant_token or None,
-                # Manager M (Qdrant + Embedding) 설정
-                embedding_type=st.session_state.embedding_type,
-                embedder_url=st.session_state.embedder_url,
-                openai_api_key=st.session_state.openai_api_key,
-                embedding_dims=st.session_state.embedding_dims,
-                qdrant_url=st.session_state.qdrant_url,
-                qdrant_api_key=st.session_state.qdrant_api_key,
-                m_collection_name=st.session_state.m_collection_name,
-                # Manager S 설정
-                tavily_api_key=st.session_state.tavily_api_key or None,
-                max_search_results=5,
-                # Manager T 설정
-                google_credentials_path=st.session_state.google_credentials_path,
-                google_token_path=st.session_state.google_token_path,
-                # 공통 설정
-                model_name=DEFAULT_VALUES["model_name"],
-                temperature=DEFAULT_VALUES["temperature"],
-            )
-        st.success("✅ 초기화 완료!")
-        return agent
-    except Exception as e:
-        st.error(f"❌ 초기화 실패: {e}")
-        return None
 
 
 # ============================================================================
@@ -629,123 +570,155 @@ if st.session_state.view_mode == "💬 채팅" and st.session_state.input_mode =
 # 입력이 있을 때 처리 (채팅 화면에서만)
 # prompt는 채팅 화면의 st.chat_input() 또는 음성 입력에서 정의됨
 if st.session_state.view_mode == "💬 채팅" and 'prompt' in locals() and prompt:
-    if st.session_state.agent is None:
-        st.error("❌ 에이전트 초기화에 실패했습니다. 사이드바에서 '에이전트 재시작' 버튼을 눌러주세요.")
-        st.stop()
-
     # 사용자 메시지
     st.session_state.messages.append({"role": "user", "content": prompt})
     display_chat_message("user", prompt)
 
-    # 에이전트 실행
-    with st.spinner("생각 중..."):
-        try:
-            # 통합 ID 전략: session_id를 thread_id와 session_id 모두로 사용
-            config = {"configurable": {"thread_id": st.session_state.session_id}}
-            
-            # 스트리밍을 위한 상태 컨테이너
-            execution_logs = []  # 로그 수집용 리스트
-            
-            with st.status("🤔 생각 중...", expanded=True) as status:
-                # Stream 실행
-                for chunk in st.session_state.agent.stream(
-                    message=prompt,
-                    user_id=st.session_state.user_id,
-                    thread_id=st.session_state.session_id,
-                    session_id=st.session_state.session_id,
-                ):
-                    # 청크 처리 및 로그 표시
-                    for node_name, updates in chunk.items():
-                        # Router 로그
-                        if node_name == "router":
-                            reason = updates.get("routing_reason", "Unknown reason")
-                            target = updates.get("current_agent", "unknown")
-                            log_msg = f"🔄 **Router:** {target.upper()}로 전달 ({reason})"
-                            status.write(log_msg)
-                            execution_logs.append(log_msg)
-                        
-                        # Manager 로그
-                        elif node_name.startswith("manager_"):
-                            agent_key = node_name.replace("manager_", "")
-                            msgs = updates.get("messages", [])
-                            
-                            # 새로 생성된 메시지 중 ToolMessage(핸드오프) 확인
-                            for msg in msgs:
-                                if hasattr(msg, "type") and msg.type == "tool":
-                                    # 핸드오프 메시지
-                                    log_msg = f"🤝 **{agent_key.upper()}:** 핸드오프 실행 - {msg.content}"
-                                    status.write(log_msg)
-                                    execution_logs.append(log_msg)
-                                elif hasattr(msg, "type") and msg.type == "ai" and msg.tool_calls:
-                                    # 툴 호출
-                                    for tool_call in msg.tool_calls:
-                                        log_msg = f"🛠️ **{agent_key.upper()}:** 툴 호출 - `{tool_call['name']}`"
-                                        status.write(log_msg)
-                                        execution_logs.append(log_msg)
-                
-                status.update(label="✅ 완료!", state="complete", expanded=False)
+    # FastAPI를 통한 스트리밍 실행
+    try:
+        # 툴/라우터 로그를 위한 컨테이너를 먼저 생성 (사용자 메시지와 AI 응답 사이)
+        logs_container = st.container()
 
-            # 최종 상태 가져오기
-            snapshot = st.session_state.agent.graph.get_state(config)
-            result = snapshot.values
+        # 응답을 실시간으로 표시할 placeholder (st.empty()로 내용 교체)
+        message_placeholder = st.empty()
+        full_response = ""
+        current_node = "unknown"
+        current_agent_name = "Assistant"
+        avatar = "🤖"  # 기본 아이콘
 
-            # Interrupt 확인 (Next가 있으면 interrupt 상태)
-            if snapshot.next:
-                # snapshot.tasks에서 interrupt 추출
-                interrupts = []
-                for task in snapshot.tasks:
-                    interrupts.extend(task.interrupts)
+        # Agent별 응답 저장 (handoff 시 여러 agent가 응답)
+        agent_responses = []  # [(agent_name, avatar, response_text), ...]
 
-                if interrupts:
-                    # HITL 승인 대기 상태로 전환 (context 정보도 함께 저장)
-                    st.session_state.pending_approval = {
-                        "interrupt": interrupts[0],
-                        "config": config,
-                        "user_id": st.session_state.user_id,
-                        "thread_id": st.session_state.session_id,
-                        "session_id": st.session_state.session_id
-                    }
-                    status.update(label="⏸️ 승인 대기 중", state="running", expanded=False)
-                    st.rerun()  # UI를 즉시 갱신하여 승인 UI 표시
+        # Agent code → 이름/아이콘 매핑 (state의 current_agent 값 사용)
+        agent_to_info = {
+            "i": ("Manager I", "🏠"),
+            "m": ("Manager M", "🧠"),
+            "s": ("Manager S", "🔍"),
+            "t": ("Manager T", "📅"),
+        }
 
-            # 정상 응답 (interrupt가 없을 때만 실행됨)
-            msg, agent_name = extract_response(result)
-            active = result.get("active_agent")
+        # FastAPI SSE 스트림
+        for event in st.session_state.api_client.chat_stream(
+            message=prompt,
+            thread_id=st.session_state.session_id,
+            user_id=st.session_state.user_id,
+        ):
+            event_type = event.get("event")
 
-            if active:
-                st.session_state.routing_history.append(active)
+            # Agent 시작 이벤트 (초기 agent 정보)
+            if event_type == "agent_start":
+                agent_code = event.get("current_agent")
+                if agent_code and agent_code in agent_to_info:
+                    current_agent_name, avatar = agent_to_info[agent_code]
+                    current_node = agent_code
 
-            # 올바른 아바타 선택 (순수 이모지만 사용)
-            avatar_map = {
-                "Manager I": "🏠",
-                "Manager M": "🧠",
-                "Manager S": "🔍",
-                "Manager T": "📅",
-            }
-            avatar = avatar_map.get(agent_name, "🤖")
+            # Agent 변경 이벤트 (handoff 발생)
+            elif event_type == "agent_change":
+                # 이전 agent의 응답 저장
+                if full_response:
+                    agent_responses.append((current_agent_name, avatar, full_response))
+                    full_response = ""  # 새 agent를 위해 리셋
 
-            # 아바타와 함께 메시지 표시
-            with st.chat_message("assistant", avatar=avatar):
-                if agent_name:
-                    st.caption(f"**{agent_name}**")
-                st.markdown(msg)
+                # 새 agent 정보 설정
+                agent_code = event.get("current_agent")
+                if agent_code and agent_code in agent_to_info:
+                    current_agent_name, avatar = agent_to_info[agent_code]
+                    current_node = agent_code
 
+            # 토큰 스트리밍 (실시간 표시)
+            elif event_type == "token":
+                full_response += event.get("content", "")
+
+                # 전체 메시지 렌더링 (이전 agent들 + 현재 agent)
+                with message_placeholder.container():
+                    # 이전에 완료된 agent들의 응답 표시
+                    for prev_agent_name, prev_avatar, prev_response in agent_responses:
+                        st.markdown(f"**{prev_avatar} {prev_agent_name}**")
+                        st.markdown(prev_response)
+                        st.markdown("---")  # 구분선
+
+                    # 현재 agent의 응답 표시 (스트리밍 중)
+                    st.markdown(f"**{avatar} {current_agent_name}**")
+                    st.markdown(full_response + "▌")  # 커서 표시
+
+            # LLM 완료
+            elif event_type == "llm_end":
+                full_response = event.get("full_message", full_response)
+                # llm_end는 표시 업데이트 없이 full_message만 저장
+
+            # 라우터 결정
+            elif event_type == "router_decision":
+                target = event.get("target_agent", "unknown")
+                reason = event.get("reason", "No reason provided")
+
+                # Agent 이름 매핑
+                agent_names = {"i": "Manager I", "m": "Manager M", "s": "Manager S", "t": "Manager T"}
+                target_name = agent_names.get(target, target)
+
+                with logs_container:
+                    with st.status(f"🔀 라우팅: {target_name}", state="complete", expanded=False):
+                        st.write(f"**사유:** {reason}")
+
+            # 툴 실행
+            elif event_type == "tool_start":
+                tool_name = event.get("tool_name")
+                with logs_container:
+                    with st.status(f"🛠️ {tool_name} 실행 중...", expanded=False):
+                        st.write(f"입력: {event.get('tool_input', {})}")
+
+            # 인터럽트 (HITL)
+            elif event_type == "interrupt":
+                # 마지막 agent 응답도 저장
+                if full_response:
+                    agent_responses.append((current_agent_name, avatar, full_response))
+
+                st.session_state.pending_approval = {
+                    "interrupt": event.get("interrupt"),
+                    "thread_id": st.session_state.session_id,
+                    "user_id": st.session_state.user_id,
+                    "session_id": st.session_state.session_id,
+                }
+                st.warning("⏸️ 승인이 필요한 작업이 있습니다")
+                st.rerun()
+
+            # 완료
+            elif event_type == "done":
+                # 마지막 agent의 응답 저장
+                if full_response:
+                    agent_responses.append((current_agent_name, avatar, full_response))
+
+                # 최종 메시지 표시 (모든 agent 응답)
+                if agent_responses:
+                    with message_placeholder.container():
+                        for idx, (agent_name, agent_avatar, response) in enumerate(agent_responses):
+                            st.markdown(f"**{agent_avatar} {agent_name}**")
+                            st.markdown(response)
+                            # 마지막이 아니면 구분선
+                            if idx < len(agent_responses) - 1:
+                                st.markdown("---")
+
+            # 오류
+            elif event_type == "error":
+                st.error(f"❌ 오류: {event.get('error')}")
+                with st.expander("상세 오류"):
+                    st.code(event.get("traceback", ""))
+
+        # 메시지 저장 (각 agent별로 개별 메시지)
+        for agent_name, agent_avatar, response in agent_responses:
             st.session_state.messages.append({
                 "role": "assistant",
-                "content": msg,
+                "content": response,
                 "agent_name": agent_name,
-                "logs": execution_logs,  # 로그 저장
             })
 
-        except Exception as e:
-            error_msg = f"❌ 오류: {e}"
-            st.error(error_msg)
-            st.session_state.messages.append({
-                "role": "assistant",
-                "content": error_msg,
-            })
-
-            render_error_expander("상세 오류")
+    except Exception as e:
+        error_msg = f"❌ FastAPI 연결 오류: {e}"
+        st.error(error_msg)
+        st.session_state.messages.append({
+            "role": "assistant",
+            "content": error_msg,
+        })
+        render_error_expander("상세 오류")
 
 st.divider()
 st.caption("Team-H for hhyun")

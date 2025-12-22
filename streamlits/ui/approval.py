@@ -3,12 +3,13 @@
 
 사용자가 각 작업에 대해 독립적으로 결정을 내리고,
 모든 결정을 확인한 후 "최종 제출" 버튼으로 한 번에 전송합니다.
+
+FastAPI 클라이언트를 통해 HITL resume 요청을 처리합니다.
 """
 
 import streamlit as st
 import json
 from typing import Dict, List, Any, Optional
-from langgraph.types import Command
 
 
 def initialize_approval_decisions(num_actions: int):
@@ -318,7 +319,7 @@ def render_decision_buttons(idx: int, action: Dict[str, Any], allowed: List[str]
 
 
 def execute_single_decision(decision_type: str, action: Dict[str, Any], approval_data: Dict[str, Any], edited_args: Optional[Dict] = None, edited_tool_name: Optional[str] = None, reject_message: Optional[str] = None):
-    """단일 작업 즉시 실행"""
+    """단일 작업 즉시 실행 (FastAPI 클라이언트 사용)"""
     try:
         # 단일 결정 페이로드 생성
         if decision_type == "approve":
@@ -340,64 +341,54 @@ def execute_single_decision(decision_type: str, action: Dict[str, Any], approval
             st.error(f"❌ 알 수 없는 결정 타입: {decision_type}")
             return
 
-        # 그래프 실행
-        from agents.context import TeamHContext
+        # FastAPI 클라이언트로 resume 요청
+        api_client = st.session_state.api_client
+        thread_id = approval_data["thread_id"]
+        user_id = approval_data.get("user_id", "default_user")
+        session_id = approval_data.get("session_id")
 
-        context = TeamHContext(
-            user_id=approval_data["user_id"],
-            thread_id=approval_data["thread_id"],
-            session_id=approval_data["session_id"]
-        )
-
+        # SSE 스트림 표시
         with st.spinner("⏳ 작업 실행 중..."):
-            result_stream = st.session_state.agent.graph.stream(
-                Command(resume={"decisions": decisions}),
-                config=approval_data["config"],
-                context=context
-            )
-
-            # 결과 수집
-            result_chunks = list(result_stream)
-
-            # 응답 추출
+            full_response = ""
             agent_name = "Manager M"
-            msg = "✅ 작업이 완료되었습니다."
+            message_placeholder = st.empty()
 
-            # 상태 병합 및 응답 추출
-            final_state = {}
-            for chunk in result_chunks:
-                if isinstance(chunk, dict):
-                    for node_name, state_update in chunk.items():
-                        if isinstance(state_update, dict):
-                            if "messages" in state_update:
-                                if "messages" not in final_state:
-                                    final_state["messages"] = []
-                                final_state["messages"].extend(state_update["messages"])
-                            if "current_agent" in state_update:
-                                final_state["current_agent"] = state_update["current_agent"]
-                            if "last_active_manager" in state_update:
-                                final_state["last_active_manager"] = state_update["last_active_manager"]
+            # SSE 스트림 처리
+            for event in api_client.resume_stream(
+                thread_id=thread_id,
+                decisions=decisions,
+                user_id=user_id,
+                session_id=session_id,
+            ):
+                event_type = event.get("event")
 
-            # 마지막 AIMessage 추출
-            messages = final_state.get("messages", [])
-            for msg_obj in reversed(messages):
-                if hasattr(msg_obj, "type") and msg_obj.type == "ai":
-                    if msg_obj.content:
-                        msg = msg_obj.content
-                        break
+                if event_type == "token":
+                    # 실시간 토큰 스트리밍
+                    full_response += event.get("content", "")
+                    message_placeholder.markdown(full_response + "▌")
 
-            # Agent 이름 추출
-            current_agent = final_state.get("current_agent") or final_state.get("last_active_manager")
-            if current_agent:
-                agent_name_map = {"i": "Manager I", "m": "Manager M", "s": "Manager S", "t": "Manager T"}
-                agent_name = agent_name_map.get(current_agent, f"Manager {current_agent.upper()}")
+                elif event_type == "llm_end":
+                    # LLM 완료 시 전체 메시지
+                    full_msg = event.get("full_message", "")
+                    if full_msg:
+                        full_response = full_msg
+
+                elif event_type == "done":
+                    # 정상 완료
+                    break
+
+                elif event_type == "error":
+                    # 오류 발생
+                    st.error(f"❌ 서버 오류: {event.get('error')}")
+                    return
 
             # 메시지 저장
-            st.session_state.messages.append({
-                "role": "assistant",
-                "content": msg,
-                "agent_name": agent_name,
-            })
+            if full_response:
+                st.session_state.messages.append({
+                    "role": "assistant",
+                    "content": full_response,
+                    "agent_name": agent_name,
+                })
 
             # 상태 정리
             st.session_state.pending_approval = None
@@ -522,16 +513,17 @@ def render_approval_ui_refactored():
 
     # 디버그 정보 (선택적)
     with st.expander("🐛 디버그: 전체 구조", expanded=False):
-        st.code(f"Type: {type(interrupt.value).__name__}")
+        st.code(f"Type: {type(interrupt).__name__}")
         try:
-            st.code(json.dumps(interrupt.value, indent=2, default=str))
+            st.code(json.dumps(interrupt, indent=2, default=str))
         except:
-            st.text(str(interrupt.value))
+            st.text(str(interrupt))
 
     # action_requests 추출
     try:
-        action_requests = interrupt.value.get("action_requests", [])
-        review_configs = interrupt.value.get("review_configs", [])
+        # FastAPI에서 받은 interrupt는 이미 dictionary 형태
+        action_requests = interrupt.get("action_requests", [])
+        review_configs = interrupt.get("review_configs", [])
 
         if not action_requests:
             st.error("❌ action_requests가 비어있습니다")
@@ -550,7 +542,7 @@ def render_approval_ui_refactored():
 
         # 다중 작업인 경우에만 요약 및 최종 제출 버튼 표시
         if not is_single_action and render_approval_summary(action_requests):
-            # 최종 제출 처리
+            # 최종 제출 처리 (FastAPI 클라이언트 사용)
             try:
                 decisions = build_decisions_payload(action_requests)
 
@@ -559,92 +551,61 @@ def render_approval_ui_refactored():
                     st.error("❌ 모든 작업에 대한 결정이 필요합니다.")
                     return True
 
-                # Use stream instead of invoke to get all messages including final response
-                from agents.context import TeamHContext
+                # FastAPI 클라이언트로 resume 요청
+                api_client = st.session_state.api_client
+                thread_id = approval_data["thread_id"]
+                user_id = approval_data.get("user_id", "default_user")
+                session_id = approval_data.get("session_id")
 
-                context = TeamHContext(
-                    user_id=approval_data["user_id"],
-                    thread_id=approval_data["thread_id"],
-                    session_id=approval_data["session_id"]
-                )
+                # SSE 스트림 표시
+                with st.spinner("⏳ 모든 작업 실행 중..."):
+                    full_response = ""
+                    agent_name = "Manager M"
+                    message_placeholder = st.empty()
 
-                result_stream = st.session_state.agent.graph.stream(
-                    Command(resume={"decisions": decisions}),
-                    config=approval_data["config"],
-                    context=context
-                )
+                    # SSE 스트림 처리
+                    for event in api_client.resume_stream(
+                        thread_id=thread_id,
+                        decisions=decisions,
+                        user_id=user_id,
+                        session_id=session_id,
+                    ):
+                        event_type = event.get("event")
 
-                # Collect all chunks
-                result_chunks = list(result_stream)
-                print(f"[DEBUG] Got {len(result_chunks)} chunks from stream")
-                for i, chunk in enumerate(result_chunks):
-                    print(f"[DEBUG] Chunk {i}: {list(chunk.keys()) if isinstance(chunk, dict) else type(chunk)}")
+                        if event_type == "token":
+                            # 실시간 토큰 스트리밍
+                            full_response += event.get("content", "")
+                            message_placeholder.markdown(full_response + "▌")
 
-                result = result_chunks[-1] if result_chunks else {}
+                        elif event_type == "llm_end":
+                            # LLM 완료 시 전체 메시지
+                            full_msg = event.get("full_message", "")
+                            if full_msg:
+                                full_response = full_msg
 
-                # 응답 추출 및 저장
-                # Stream chunks have format: [{node_name: state_update}, ...]
-                agent_name = "Manager M"  # Default since we know we're in Manager M
-                msg = "✅ 작업이 완료되었습니다."
+                        elif event_type == "done":
+                            # 정상 완료
+                            break
 
-                try:
-                    # Collect all state updates from chunks
-                    final_state = {}
-                    for chunk in result_chunks:
-                        if isinstance(chunk, dict):
-                            # Each chunk is {node_name: state_update}
-                            for node_name, state_update in chunk.items():
-                                print(f"[DEBUG] Processing node: {node_name}")
-                                if isinstance(state_update, dict):
-                                    # Merge state updates
-                                    if "messages" in state_update:
-                                        if "messages" not in final_state:
-                                            final_state["messages"] = []
-                                        # Add new messages
-                                        final_state["messages"].extend(state_update["messages"])
-                                    if "current_agent" in state_update:
-                                        final_state["current_agent"] = state_update["current_agent"]
-                                    if "last_active_manager" in state_update:
-                                        final_state["last_active_manager"] = state_update["last_active_manager"]
+                        elif event_type == "error":
+                            # 오류 발생
+                            st.error(f"❌ 서버 오류: {event.get('error')}")
+                            return True
 
-                    print(f"[DEBUG] Final state keys: {final_state.keys()}")
-                    print(f"[DEBUG] Total messages: {len(final_state.get('messages', []))}")
+                    # 메시지 저장
+                    if full_response:
+                        st.session_state.messages.append({
+                            "role": "assistant",
+                            "content": full_response,
+                            "agent_name": agent_name,
+                        })
 
-                    # Extract last AIMessage
-                    messages = final_state.get("messages", [])
-                    for msg_obj in reversed(messages):
-                        if hasattr(msg_obj, "type") and msg_obj.type == "ai":
-                            if msg_obj.content:
-                                msg = msg_obj.content
-                                print(f"[DEBUG] Found AI message: {msg[:100]}...")
-                                break
+                    # 상태 정리
+                    st.session_state.pending_approval = None
+                    st.session_state.approval_decisions = {}
 
-                    # Extract agent name
-                    current_agent = final_state.get("current_agent") or final_state.get("last_active_manager")
-                    if current_agent:
-                        agent_name_map = {"i": "Manager I", "m": "Manager M", "s": "Manager S", "t": "Manager T"}
-                        agent_name = agent_name_map.get(current_agent, f"Manager {current_agent.upper()}")
-
-                    print(f"[DEBUG] Final agent_name: {agent_name}")
-                    print(f"[DEBUG] Final msg: {msg[:200] if len(msg) > 200 else msg}")
-
-                except Exception as e:
-                    import traceback
-                    print(f"[DEBUG] Exception in response extraction: {str(e)}")
-                    print(f"[DEBUG] Traceback: {traceback.format_exc()}")
-
-                st.session_state.messages.append({
-                    "role": "assistant",
-                    "content": msg,
-                    "agent_name": agent_name,
-                })
-
-                # 상태 정리
-                st.session_state.pending_approval = None
-                st.session_state.approval_decisions = {}
-
-                st.success("✅ 승인 처리 완료!")
-                st.rerun()
+                    st.success("✅ 승인 처리 완료!")
+                    st.rerun()
 
             except Exception as e:
                 st.error(f"❌ 승인 처리 중 오류: {e}")

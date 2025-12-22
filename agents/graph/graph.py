@@ -14,11 +14,11 @@ from typing import Optional, Dict, Any, List
 import os
 from langgraph.graph import StateGraph
 from langgraph.checkpoint.memory import MemorySaver
-from langgraph.checkpoint.postgres import PostgresSaver
+from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 from langchain_core.messages import HumanMessage
 from langchain_core.tools import tool
 import psycopg
-from psycopg_pool import ConnectionPool
+from psycopg_pool import AsyncConnectionPool
 from psycopg.rows import dict_row
 
 # Langfuse 통합
@@ -456,8 +456,8 @@ class TeamHGraph(NodesMixin):
                 self.checkpointer = MemorySaver()
                 return
 
-            # Connection pool 생성
-            self.db_pool = ConnectionPool(
+            # Async Connection pool 생성
+            self.db_pool = AsyncConnectionPool(
                 conninfo=conn_string,
                 max_size=20,
                 kwargs={
@@ -467,11 +467,11 @@ class TeamHGraph(NodesMixin):
                 }
             )
 
-            # PostgresSaver 초기화
-            self.checkpointer = PostgresSaver(self.db_pool)
+            # AsyncPostgresSaver 초기화
+            self.checkpointer = AsyncPostgresSaver(self.db_pool)
 
-            # 테이블 자동 생성 (없으면 생성)
-            self.checkpointer.setup()
+            # 테이블 자동 생성은 비동기로 수행되어야 하므로 startup에서 처리
+            # Note: setup()은 동기 메서드이므로 여기서는 호출하지 않음
 
             print(f"[✅] PostgreSQL checkpoint initialized")
             print(f"[ℹ️] Chat history will be persisted to PostgreSQL")
