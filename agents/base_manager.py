@@ -120,28 +120,6 @@ class ManagerBase(ABC):
         """
         pass
 
-    def _prepare_message(self, message: str, **kwargs) -> str:
-        """
-        메시지 전처리를 위한 hook
-
-        invoke/stream 호출 시 메시지를 전처리합니다.
-        자식 클래스에서 오버라이드하여 메시지를 수정하세요.
-
-        Args:
-            message: 원본 메시지
-            **kwargs: invoke/stream에서 전달된 추가 파라미터
-
-        Returns:
-            전처리된 메시지
-
-        Example:
-            class ManagerM(ManagerBase):
-                def _prepare_message(self, message, **kwargs):
-                    user_id = kwargs.get("user_id", "default_user")
-                    return f"[User ID: {user_id}]\\n{message}"
-        """
-        return message
-
     @abstractmethod
     def _create_tools(self) -> List:
         """
@@ -259,39 +237,12 @@ class ManagerBase(ABC):
         """
         config = {"configurable": {"thread_id": thread_id}}
 
-        # 메시지 전처리 hook 호출 (자식 클래스에서 오버라이드 가능)
-        prepared_message = self._prepare_message(message, **kwargs)
-
         result = self.agent.invoke(
-            {"messages": [{"role": "user", "content": prepared_message}]},
+            {"messages": [{"role": "user", "content": message}]},
             config=config,
         )
 
         return result
-
-    def stream(self, message: str, thread_id: str = "default_thread", **kwargs):
-        """
-        에이전트 스트리밍 실행
-
-        Args:
-            message: 사용자 메시지
-            thread_id: 대화 스레드 ID
-            **kwargs: 추가 파라미터
-
-        Yields:
-            에이전트 응답 청크
-        """
-        config = {"configurable": {"thread_id": thread_id}}
-
-        # 메시지 전처리 hook 호출 (자식 클래스에서 오버라이드 가능)
-        prepared_message = self._prepare_message(message, **kwargs)
-
-        for chunk in self.agent.stream(
-            {"messages": [{"role": "user", "content": prepared_message}]},
-            config=config,
-            stream_mode="values",
-        ):
-            yield chunk
 
     def get_state(self, config: dict):
         """

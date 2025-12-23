@@ -8,7 +8,6 @@ LangGraph의 StateGraph를 사용하여 명확하고 시각화 가능한 에이�
 - 무한 루프 방지: 핸드오프 횟수 제한
 """
 
-import sys
 from pathlib import Path
 from typing import Optional, Dict, Any, List
 import os
@@ -16,7 +15,6 @@ from langgraph.graph import StateGraph
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 from langchain_core.messages import HumanMessage
 from langchain_core.tools import tool
-import psycopg
 from psycopg_pool import AsyncConnectionPool
 from psycopg.rows import dict_row
 
@@ -113,6 +111,9 @@ class TeamHGraph(NodesMixin):
 
         # AgentRouting 클래스 저장 (nodes.py에서 사용)
         self.AgentRouting = AgentRouting
+
+        # 환경 변수 로딩 (한 번만)
+        self._load_env()
 
         # Langfuse 초기화 (환경 변수 기반)
         self._init_langfuse()
@@ -217,10 +218,9 @@ class TeamHGraph(NodesMixin):
 
         # 시작점: 라우터
         workflow.set_entry_point("router")
-        
+
         # Command 패턴을 사용하므로 conditional edges 불필요
 
-        # 컴파일 - PostgresSaver 또는 MemorySaver 사용
         return workflow.compile(checkpointer=self.checkpointer)
 
     # ========================================================================
@@ -403,17 +403,17 @@ class TeamHGraph(NodesMixin):
     # 초기화 헬퍼 메서드 (내부용 - IDE에서 접어두고 볼 것)
     # ========================================================================
 
+    def _load_env(self):
+        """환경 변수 로딩 (한 번만 실행)"""
+        from dotenv import load_dotenv
+
+        env_path = Path(__file__).parent.parent.parent / ".env"
+        if env_path.exists():
+            load_dotenv(env_path)
+
     def _init_langfuse(self):
         """Langfuse 초기화 (환경 변수 기반)"""
         try:
-            # .env 파일이 있으면 로드
-            from pathlib import Path
-            from dotenv import load_dotenv
-
-            env_path = Path(__file__).parent.parent.parent / ".env"
-            if env_path.exists():
-                load_dotenv(env_path)
-
             # Langfuse v3: singleton client 사용 (환경 변수 자동 사용)
             # LANGFUSE_SECRET_KEY, LANGFUSE_PUBLIC_KEY, LANGFUSE_BASE_URL
             self.langfuse_client = get_client()
@@ -437,14 +437,6 @@ class TeamHGraph(NodesMixin):
             )
 
         try:
-            # .env 파일이 있으면 로드 (Langfuse 초기화에서 이미 했을 수 있지만 안전하게)
-            from pathlib import Path
-            from dotenv import load_dotenv
-
-            env_path = Path(__file__).parent.parent.parent / ".env"
-            if env_path.exists():
-                load_dotenv(env_path)
-
             # 환경 변수에서 connection string 가져오기
             conn_string = self.postgres_connection_string or os.getenv(
                 "POSTGRES_CONNECTION_STRING"
@@ -485,6 +477,8 @@ class TeamHGraph(NodesMixin):
 
     def _init_router_llm(self):
         """라우터 LLM 초기화 (중앙화된 factory 사용)"""
+        import yaml
+
         self.router_llm = create_llm()
 
         # 프롬프트 파일 경로
@@ -494,7 +488,6 @@ class TeamHGraph(NodesMixin):
 
         # 라우터 템플릿 읽기 (YAML)
         try:
-            import yaml
             with open(router_template_path, "r", encoding="utf-8") as f:
                 router_data = yaml.safe_load(f)
             router_template = router_data['content']
@@ -505,7 +498,6 @@ class TeamHGraph(NodesMixin):
         # 매니저 설명 읽기 (YAML)
         manager_descriptions_map = {}
         try:
-            import yaml
             with open(router_descriptions_path, "r", encoding="utf-8") as f:
                 manager_descriptions_map = yaml.safe_load(f)
 
