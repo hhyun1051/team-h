@@ -13,7 +13,6 @@ from pathlib import Path
 from typing import Optional, Dict, Any, List
 import os
 from langgraph.graph import StateGraph
-from langgraph.checkpoint.memory import MemorySaver
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 from langchain_core.messages import HumanMessage
 from langchain_core.tools import tool
@@ -432,9 +431,10 @@ class TeamHGraph(NodesMixin):
     def _init_postgres_checkpoint(self):
         """PostgreSQL checkpoint 초기화"""
         if not self.use_postgres_checkpoint:
-            print(f"[ℹ️] Using in-memory checkpoint (MemorySaver)")
-            self.checkpointer = MemorySaver()
-            return
+            raise ValueError(
+                "PostgreSQL checkpoint is required for FastAPI backend. "
+                "Set use_postgres_checkpoint=True and provide POSTGRES_CONNECTION_STRING in .env"
+            )
 
         try:
             # .env 파일이 있으면 로드 (Langfuse 초기화에서 이미 했을 수 있지만 안전하게)
@@ -451,10 +451,11 @@ class TeamHGraph(NodesMixin):
             )
 
             if not conn_string:
-                print(f"[⚠️] PostgreSQL connection string not found, falling back to MemorySaver")
-                print(f"[ℹ️] Set POSTGRES_CONNECTION_STRING in .env or pass postgres_connection_string parameter")
-                self.checkpointer = MemorySaver()
-                return
+                raise ValueError(
+                    "PostgreSQL connection string not found. "
+                    "Set POSTGRES_CONNECTION_STRING in .env or pass postgres_connection_string parameter. "
+                    "FastAPI backend requires persistent storage for chat history."
+                )
 
             # Async Connection pool 생성
             self.db_pool = AsyncConnectionPool(
@@ -477,9 +478,10 @@ class TeamHGraph(NodesMixin):
             print(f"[ℹ️] Chat history will be persisted to PostgreSQL")
 
         except Exception as e:
-            print(f"[⚠️] PostgreSQL checkpoint initialization failed: {e}")
-            print(f"[ℹ️] Falling back to in-memory checkpoint (MemorySaver)")
-            self.checkpointer = MemorySaver()
+            raise RuntimeError(
+                f"Failed to initialize PostgreSQL checkpoint: {e}. "
+                "FastAPI backend requires persistent storage for chat history."
+            ) from e
 
     def _init_router_llm(self):
         """라우터 LLM 초기화 (중앙화된 factory 사용)"""
