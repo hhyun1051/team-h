@@ -84,8 +84,11 @@ class NodesMixin:
         print(f"[🔀] Routing to Manager {routing.target_agent.upper()}: {routing.reason}")
 
         # Command로 다음 노드 지정
+        target_node = f"manager_{routing.target_agent}"
+        print(f"[DEBUG] Router Command: goto='{target_node}', target_agent='{routing.target_agent}'")
+
         return Command(
-            goto=f"manager_{routing.target_agent}",
+            goto=target_node,
             update={
                 "routing_reason": routing.reason,
                 "current_agent": routing.target_agent,
