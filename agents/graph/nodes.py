@@ -14,6 +14,40 @@ from .state import TeamHState
 class NodesMixin:
     """Mixin class containing all node execution logic for TeamHGraph"""
 
+    # Manager별 추가 설정
+    MANAGER_EXTRA_CONFIGS = {
+        "i": {},
+        "m": {"recursion_limit": 20},
+        "s": {},
+        "t": {},
+    }
+
+    def _build_node_config(
+        self,
+        config: Optional[Dict[str, Any]],
+        recursion_limit: Optional[int] = None
+    ) -> Dict[str, Any]:
+        """
+        노드 실행을 위한 config 빌드
+
+        Args:
+            config: 원본 config (callbacks 포함)
+            recursion_limit: 재귀 제한 (옵션)
+
+        Returns:
+            노드 실행용 config 딕셔너리
+        """
+        if not config:
+            node_config = {}
+        else:
+            callbacks = config.get("callbacks", [])
+            node_config = {"callbacks": callbacks} if callbacks else {}
+
+        if recursion_limit:
+            node_config["recursion_limit"] = recursion_limit
+
+        return node_config
+
     def _router_node(self, state: TeamHState, config: Optional[Dict[str, Any]] = None) -> Command:
         """라우터 노드 - 초기 라우팅 결정 (첫 턴) 또는 last_active_manager 사용"""
         last_active = state.get("last_active_manager")
@@ -34,9 +68,8 @@ class NodesMixin:
 
         print(f"[🔀] Router analyzing request (first turn)...")
 
-        # config에서 callbacks 추출
-        callbacks = config.get("callbacks", []) if config else []
-        router_config = {"callbacks": callbacks} if callbacks else {}
+        # config 빌드
+        router_config = self._build_node_config(config)
 
         # structured output으로 라우팅 결정
         routing_agent = self.router_llm.with_structured_output(self.AgentRouting)
@@ -59,24 +92,37 @@ class NodesMixin:
             }
         )
 
+    def _create_manager_node(self, manager_key: str):
+        """
+        Manager 노드 함수 생성 헬퍼
+
+        Args:
+            manager_key: Manager 키 ("i", "m", "s", "t")
+
+        Returns:
+            Manager 노드 실행 결과
+        """
+        def node_func(state: TeamHState, config: Optional[Dict[str, Any]] = None) -> Command:
+            manager = getattr(self, f"manager_{manager_key}")
+            extra_config = self.MANAGER_EXTRA_CONFIGS.get(manager_key, {})
+            return self._execute_manager_node(state, config, manager, manager_key, **extra_config)
+        return node_func
+
     def _manager_i_node(self, state: TeamHState, config: Optional[Dict[str, Any]] = None) -> Command:
         """Manager I 노드"""
-        return self._execute_manager_node(state, config, self.manager_i, "i")
+        return self._create_manager_node("i")(state, config)
 
     def _manager_m_node(self, state: TeamHState, config: Optional[Dict[str, Any]] = None) -> Command:
-        """Manager M 노드 - 재귀 제한 설정 (user_id는 context로 전달됨)"""
-        return self._execute_manager_node(
-            state, config, self.manager_m, "m",
-            recursion_limit=20
-        )
+        """Manager M 노드"""
+        return self._create_manager_node("m")(state, config)
 
     def _manager_s_node(self, state: TeamHState, config: Optional[Dict[str, Any]] = None) -> Command:
         """Manager S 노드"""
-        return self._execute_manager_node(state, config, self.manager_s, "s")
+        return self._create_manager_node("s")(state, config)
 
     def _manager_t_node(self, state: TeamHState, config: Optional[Dict[str, Any]] = None) -> Command:
         """Manager T 노드"""
-        return self._execute_manager_node(state, config, self.manager_t, "t")
+        return self._create_manager_node("t")(state, config)
 
     def _execute_manager_node(
         self,
@@ -92,11 +138,8 @@ class NodesMixin:
         icon = icons.get(manager_key, "🤖")
         print(f"[{icon}] Manager {manager_key.upper()} executing...")
 
-        # config에서 callbacks 추출
-        callbacks = config.get("callbacks", []) if config else []
-        manager_config = {"callbacks": callbacks} if callbacks else {}
-        if recursion_limit:
-            manager_config["recursion_limit"] = recursion_limit
+        # config 빌드
+        manager_config = self._build_node_config(config, recursion_limit)
 
         # Messages setup
         if messages is None:
