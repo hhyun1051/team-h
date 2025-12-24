@@ -100,29 +100,13 @@ class NodesMixin:
             manager_key: Manager 키 ("i", "m", "s", "t")
 
         Returns:
-            Manager 노드 실행 결과
+            Manager 노드 실행 함수 (callable)
         """
         def node_func(state: TeamHState, config: Optional[Dict[str, Any]] = None) -> Command:
             manager = getattr(self, f"manager_{manager_key}")
             extra_config = self.MANAGER_EXTRA_CONFIGS.get(manager_key, {})
             return self._execute_manager_node(state, config, manager, manager_key, **extra_config)
         return node_func
-
-    def _manager_i_node(self, state: TeamHState, config: Optional[Dict[str, Any]] = None) -> Command:
-        """Manager I 노드"""
-        return self._create_manager_node("i")(state, config)
-
-    def _manager_m_node(self, state: TeamHState, config: Optional[Dict[str, Any]] = None) -> Command:
-        """Manager M 노드"""
-        return self._create_manager_node("m")(state, config)
-
-    def _manager_s_node(self, state: TeamHState, config: Optional[Dict[str, Any]] = None) -> Command:
-        """Manager S 노드"""
-        return self._create_manager_node("s")(state, config)
-
-    def _manager_t_node(self, state: TeamHState, config: Optional[Dict[str, Any]] = None) -> Command:
-        """Manager T 노드"""
-        return self._create_manager_node("t")(state, config)
 
     def _execute_manager_node(
         self,

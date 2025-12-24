@@ -205,16 +205,16 @@ class TeamHGraph(NodesMixin):
         workflow.add_node("router", self._router_node)
 
         if self.manager_i:
-            workflow.add_node("manager_i", self._manager_i_node)
+            workflow.add_node("manager_i", self._create_manager_node("i"))
 
         if self.manager_m:
-            workflow.add_node("manager_m", self._manager_m_node)
+            workflow.add_node("manager_m", self._create_manager_node("m"))
 
         if self.manager_s:
-            workflow.add_node("manager_s", self._manager_s_node)
+            workflow.add_node("manager_s", self._create_manager_node("s"))
 
         if self.manager_t:
-            workflow.add_node("manager_t", self._manager_t_node)
+            workflow.add_node("manager_t", self._create_manager_node("t"))
 
         # 시작점: 라우터
         workflow.set_entry_point("router")
@@ -625,117 +625,103 @@ class TeamHGraph(NodesMixin):
 
             self.handoff_tools["handoff_to_manager_t"] = handoff_to_manager_t
 
+    def _get_handoff_tools_for_manager(self, manager_key: str) -> List:
+        """
+        특정 매니저가 사용할 handoff tools 반환
+
+        Args:
+            manager_key: Manager 키 ("i", "m", "s", "t")
+
+        Returns:
+            해당 매니저가 사용할 handoff tools 리스트
+        """
+        tools = []
+        for other_key in ["i", "m", "s", "t"]:
+            if other_key != manager_key:  # 자기 자신 제외
+                enabled_flag = getattr(self, f"enable_manager_{other_key}")
+                if enabled_flag:
+                    tool_name = f"handoff_to_manager_{other_key}"
+                    if tool_name in self.handoff_tools:
+                        tools.append(self.handoff_tools[tool_name])
+        return tools
+
+    def _init_single_manager(self, manager_key: str, manager_class, **init_kwargs):
+        """
+        단일 매니저 초기화 헬퍼
+
+        Args:
+            manager_key: Manager 키 ("i", "m", "s", "t")
+            manager_class: Manager 클래스 (ManagerI, ManagerM, ManagerS, ManagerT)
+            **init_kwargs: Manager별 특수 초기화 파라미터
+
+        Returns:
+            초기화된 Manager 인스턴스 또는 None (실패 시)
+        """
+        try:
+            # 공통 middleware 리스트
+            common_middlewares = []
+            if self.tool_logging_middleware:
+                common_middlewares.append(self.tool_logging_middleware)
+
+            # handoff tools 가져오기
+            handoff_tools = self._get_handoff_tools_for_manager(manager_key)
+
+            # Manager 초기화
+            manager = manager_class(
+                model_name=self.model_name,
+                temperature=self.temperature,
+                additional_tools=handoff_tools if handoff_tools else None,
+                middleware=common_middlewares if common_middlewares else None,
+                **init_kwargs
+            )
+            print(f"[✅] Manager {manager_key.upper()} initialized")
+            return manager
+        except Exception as e:
+            print(f"[⚠️] Manager {manager_key.upper()} initialization failed: {e}")
+            return None
+
     def _init_managers(self):
         """각 Manager를 handoff tools와 함께 초기화"""
 
-        # 공통 middleware 리스트 (모든 Manager에 적용)
-        common_middlewares = []
-        if self.tool_logging_middleware:
-            common_middlewares.append(self.tool_logging_middleware)
-
         # Manager I 초기화
         if self.enable_manager_i:
-            try:
-                # Manager I에게 M, S, T로의 handoff tool 추가
-                handoff_tools_for_i = []
-                if self.enable_manager_m:
-                    handoff_tools_for_i.append(self.handoff_tools["handoff_to_manager_m"])
-                if self.enable_manager_s:
-                    handoff_tools_for_i.append(self.handoff_tools["handoff_to_manager_s"])
-                if self.enable_manager_t:
-                    handoff_tools_for_i.append(self.handoff_tools["handoff_to_manager_t"])
-
-                self.manager_i = ManagerI(
-                    model_name=self.model_name,
-                    temperature=self.temperature,
-                    homeassistant_url=self.homeassistant_url,
-                    homeassistant_token=self.homeassistant_token,
-                    entity_map=self.entity_map,
-                    additional_tools=handoff_tools_for_i if handoff_tools_for_i else None,
-                    middleware=common_middlewares if common_middlewares else None,
-                )
-                print(f"[✅] Manager I initialized")
-            except Exception as e:
-                print(f"[⚠️] Manager I initialization failed: {e}")
-                self.manager_i = None
+            self.manager_i = self._init_single_manager(
+                "i",
+                ManagerI,
+                homeassistant_url=self.homeassistant_url,
+                homeassistant_token=self.homeassistant_token,
+                entity_map=self.entity_map,
+            )
 
         # Manager M 초기화
         if self.enable_manager_m:
-            try:
-                # Manager M에게 I, S, T로의 handoff tool 추가
-                handoff_tools_for_m = []
-                if self.enable_manager_i:
-                    handoff_tools_for_m.append(self.handoff_tools["handoff_to_manager_i"])
-                if self.enable_manager_s:
-                    handoff_tools_for_m.append(self.handoff_tools["handoff_to_manager_s"])
-                if self.enable_manager_t:
-                    handoff_tools_for_m.append(self.handoff_tools["handoff_to_manager_t"])
-
-                self.manager_m = ManagerM(
-                    model_name=self.model_name,
-                    temperature=self.temperature,
-                    embedding_type=self.embedding_type,
-                    embedder_url=self.embedder_url,
-                    openai_api_key=self.openai_api_key,
-                    embedding_dims=self.embedding_dims,
-                    qdrant_url=self.qdrant_url,
-                    qdrant_api_key=self.qdrant_api_key,
-                    collection_name=self.m_collection_name,
-                    additional_tools=handoff_tools_for_m if handoff_tools_for_m else None,
-                    middleware=common_middlewares if common_middlewares else None,
-                )
-                print(f"[✅] Manager M initialized")
-            except Exception as e:
-                print(f"[⚠️] Manager M initialization failed: {e}")
-                self.manager_m = None
+            self.manager_m = self._init_single_manager(
+                "m",
+                ManagerM,
+                embedding_type=self.embedding_type,
+                embedder_url=self.embedder_url,
+                openai_api_key=self.openai_api_key,
+                embedding_dims=self.embedding_dims,
+                qdrant_url=self.qdrant_url,
+                qdrant_api_key=self.qdrant_api_key,
+                collection_name=self.m_collection_name,
+            )
 
         # Manager S 초기화
         if self.enable_manager_s:
-            try:
-                # Manager S에게 I, M, T로의 handoff tool 추가
-                handoff_tools_for_s = []
-                if self.enable_manager_i:
-                    handoff_tools_for_s.append(self.handoff_tools["handoff_to_manager_i"])
-                if self.enable_manager_m:
-                    handoff_tools_for_s.append(self.handoff_tools["handoff_to_manager_m"])
-                if self.enable_manager_t:
-                    handoff_tools_for_s.append(self.handoff_tools["handoff_to_manager_t"])
-
-                self.manager_s = ManagerS(
-                    model_name=self.model_name,
-                    temperature=self.temperature,
-                    tavily_api_key=self.tavily_api_key,
-                    max_results=self.max_search_results,
-                    additional_tools=handoff_tools_for_s if handoff_tools_for_s else None,
-                    middleware=common_middlewares if common_middlewares else None,
-                )
-                print(f"[✅] Manager S initialized")
-            except Exception as e:
-                print(f"[⚠️] Manager S initialization failed: {e}")
-                self.manager_s = None
+            self.manager_s = self._init_single_manager(
+                "s",
+                ManagerS,
+                tavily_api_key=self.tavily_api_key,
+                max_results=self.max_search_results,
+            )
 
         # Manager T 초기화
         if self.enable_manager_t:
-            try:
-                # Manager T에게 I, M, S로의 handoff tool 추가
-                handoff_tools_for_t = []
-                if self.enable_manager_i:
-                    handoff_tools_for_t.append(self.handoff_tools["handoff_to_manager_i"])
-                if self.enable_manager_m:
-                    handoff_tools_for_t.append(self.handoff_tools["handoff_to_manager_m"])
-                if self.enable_manager_s:
-                    handoff_tools_for_t.append(self.handoff_tools["handoff_to_manager_s"])
-
-                self.manager_t = ManagerT(
-                    model_name=self.model_name,
-                    temperature=self.temperature,
-                    google_credentials_path=self.google_credentials_path,
-                    google_token_path=self.google_token_path,
-                    calendar_id=self.calendar_id,
-                    additional_tools=handoff_tools_for_t if handoff_tools_for_t else None,
-                    middleware=common_middlewares if common_middlewares else None,
-                )
-                print(f"[✅] Manager T initialized")
-            except Exception as e:
-                print(f"[⚠️] Manager T initialization failed: {e}")
-                self.manager_t = None
+            self.manager_t = self._init_single_manager(
+                "t",
+                ManagerT,
+                google_credentials_path=self.google_credentials_path,
+                google_token_path=self.google_token_path,
+                calendar_id=self.calendar_id,
+            )
