@@ -8,7 +8,7 @@ Manager S는 외부 웹 검색을 담당하는 에이전트입니다:
 - 실시간 정보 조회
 - 검색 결과 요약
 
-ManagerBase를 상속받아 공통 로직을 재사용합니다.
+AgentBase를 상속받아 공통 로직을 재사용합니다.
 """
 
 import sys
@@ -20,7 +20,7 @@ project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
 # Agents import (__init__.py 활용)
-from agents import ManagerBase
+from agents import AgentBase
 from agents.context import TeamHContext
 from langchain.tools import tool, ToolRuntime
 
@@ -32,8 +32,10 @@ except ImportError:
     TavilySearchResults = None
 
 
-class ManagerS(ManagerBase):
+class ManagerS(AgentBase):
     """Manager S 에이전트 클래스 - 웹 검색 전문"""
+
+    prompt_filename = "manager_s.yaml"
 
     def __init__(
         self,

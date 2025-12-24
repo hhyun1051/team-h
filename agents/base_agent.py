@@ -19,7 +19,7 @@ from agents.context import TeamHContext
 from agents.middleware import LangfuseToolLoggingMiddleware
 from utils.llm_factory import create_llm
 
-class ManagerBase(ABC):
+class AgentBase(ABC):
     """모든 매니저 에이전트의 베이스 클래스"""
 
     # 프롬프트 디렉토리 경로
@@ -27,6 +27,17 @@ class ManagerBase(ABC):
 
     # 기본 Context Schema (자식 클래스에서 오버라이드 가능)
     CONTEXT_SCHEMA = TeamHContext
+
+    @property
+    @abstractmethod
+    def prompt_filename(self) -> str:
+        """
+        프롬프트 파일명 (자식 클래스에서 반드시 구현)
+
+        Returns:
+            프롬프트 파일명 (예: "manager_s.yaml")
+        """
+        pass
 
     def __init__(
         self,
@@ -130,7 +141,7 @@ class ManagerBase(ABC):
             **kwargs: 자식 클래스의 특수 파라미터
 
         Example:
-            class ManagerM(ManagerBase):
+            class ManagerM(AgentBase):
                 def _pre_init_hook(self, **kwargs):
                     self.memory = ManagerMMemory(
                         embedder_url=kwargs.get("embedder_url"),
@@ -148,23 +159,6 @@ class ManagerBase(ABC):
             툴 함수 리스트
         """
         pass
-
-    def _get_prompt_filename(self) -> str:
-        """
-        프롬프트 파일명 반환 (기본값: 클래스 이름을 snake_case로 변환)
-
-        Returns:
-            프롬프트 파일명 (예: "manager_s.yaml")
-
-        Note:
-            자식 클래스에서 오버라이드하여 다른 파일명 사용 가능
-        """
-        # ManagerS -> manager_s
-        class_name = self.__class__.__name__
-        # CamelCase를 snake_case로 변환
-        import re
-        snake_case = re.sub(r'(?<!^)(?=[A-Z])', '_', class_name).lower()
-        return f"{snake_case}.yaml"
 
     def _load_prompt_from_file(self, filename: str) -> str:
         """
@@ -211,8 +205,7 @@ class ManagerBase(ABC):
         Returns:
             시스템 프롬프트 문자열
         """
-        filename = self._get_prompt_filename()
-        return self._load_prompt_from_file(filename)
+        return self._load_prompt_from_file(self.prompt_filename)
 
     def _get_handoff_prompt(self) -> str:
         """

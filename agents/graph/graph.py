@@ -20,7 +20,7 @@ from psycopg.rows import dict_row
 
 # Langfuse 통합
 # Note: CallbackHandler는 api/main.py에서 사용
-# Middleware는 ManagerBase에서 자동 추가
+# Middleware는 AgentBase에서 자동 추가
 
 # Agents import
 from agents import ManagerI, ManagerM, ManagerS, ManagerT
@@ -226,7 +226,7 @@ class TeamHGraph(NodesMixin):
     # FastAPI (api/main.py)에서 self.graph.astream_events()를 직접 사용합니다.
     # Langfuse 로깅은 다음 두 계층에서 처리됩니다:
     # 1. Graph 레벨: config["callbacks"]에 CallbackHandler 추가 (api/main.py)
-    # 2. Tool 레벨: LangfuseToolLoggingMiddleware (ManagerBase)
+    # 2. Tool 레벨: LangfuseToolLoggingMiddleware (AgentBase)
 
     def get_graph_visualization(self) -> str:
         """
@@ -488,7 +488,7 @@ class TeamHGraph(NodesMixin):
             handoff_tools = self._get_handoff_tools_for_manager(manager_key)
 
             # Manager 초기화
-            # Note: ManagerBase가 내부적으로 Langfuse 미들웨어를 자동으로 추가함
+            # Note: AgentBase가 내부적으로 Langfuse 미들웨어를 자동으로 추가함
             manager = manager_class(
                 model_name=self.model_name,
                 temperature=self.temperature,

@@ -9,7 +9,7 @@ Manager M은 목표 외의 모든 일반적인 기억을 관리하는 에이전�
 - 일상적인 상호작용
 - 사용자 습관 및 패턴
 
-ManagerBase를 상속받아 공통 로직을 재사용합니다.
+AgentBase를 상속받아 공통 로직을 재사용합니다.
 HumanInTheLoopMiddleware를 통해 모든 기억 관련 작업에 대한 승인을 요구합니다.
 """
 
@@ -22,15 +22,17 @@ project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
 # Agents import (__init__.py 활용)
-from agents import ManagerBase
+from agents import AgentBase
 from agents.context import TeamHContext
 from agents.middleware import HumanInTheLoopMiddleware
 from langchain.tools import tool, ToolRuntime
 from database.qdrant.manager_m_memory import ManagerMMemory
 
 
-class ManagerM(ManagerBase):
+class ManagerM(AgentBase):
     """Manager M 에이전트 클래스 - 일반 기억 관리 전문"""
+
+    prompt_filename = "manager_m.yaml"
 
     def __init__(
         self,

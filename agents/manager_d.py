@@ -9,7 +9,7 @@ Manager D는 여러 도메인에 걸친 복합적인 요청을 조율하는 에�
 - 다른 매니저들에게 작업 위임 (SubAgentMiddleware)
 - 컨텍스트 자동 관리 (SummarizationMiddleware)
 
-ManagerBase를 상속받되, deepagents의 미들웨어를 활용합니다.
+AgentBase를 상속받되, deepagents의 미들웨어를 활용합니다.
 """
 
 import sys
@@ -21,7 +21,7 @@ project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
 # Agents import
-from agents import ManagerBase
+from agents import AgentBase
 from agents.context import TeamHContext
 
 # LangChain middleware
@@ -42,8 +42,10 @@ except ImportError:
         from deepagents import CompiledSubAgent
 
 
-class ManagerD(ManagerBase):
+class ManagerD(AgentBase):
     """Manager D 에이전트 클래스 - 복잡한 멀티스텝 태스크 조율 전문"""
+
+    prompt_filename = "manager_d.yaml"
 
     def __init__(
         self,

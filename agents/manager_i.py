@@ -15,7 +15,7 @@ Manager I는 집안의 IoT 장치를 제어하는 에이전트입니다:
 - 토큰 갱신 복잡도 제거
 - SmartThings 허브는 Home Assistant Integration으로 연결
 
-ManagerBase를 상속받아 공통 로직을 재사용합니다.
+AgentBase를 상속받아 공통 로직을 재사용합니다.
 HumanInTheLoopMiddleware를 통해 위험한 작업에 대한 승인을 요구합니다.
 """
 
@@ -30,7 +30,7 @@ project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
 # Agents import (__init__.py 활용)
-from agents import ManagerBase
+from agents import AgentBase
 from agents.context import TeamHContext
 from agents.middleware import HumanInTheLoopMiddleware
 from langchain.tools import tool, ToolRuntime
@@ -39,8 +39,10 @@ from langchain.tools import tool, ToolRuntime
 from config.homeassistant_api import HomeAssistantAPIClient
 
 
-class ManagerI(ManagerBase):
+class ManagerI(AgentBase):
     """Manager I 에이전트 클래스 - IoT 제어 전문 (Home Assistant)"""
+
+    prompt_filename = "manager_i.yaml"
 
     # 클래스 레벨 상수: Entity ID 매핑
     # SmartThings Integration 후 Home Assistant에서 확인한 실제 entity_id 사용

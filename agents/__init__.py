@@ -7,7 +7,8 @@ Team-H Agents Package
     from agents import ManagerI, ManagerM, ManagerS
 """
 
-from agents.base_manager import ManagerBase
+from agents.base_agent import AgentBase
+from agents.manager_d import ManagerD
 from agents.manager_i import ManagerI
 from agents.manager_m import ManagerM
 from agents.manager_s import ManagerS
@@ -17,7 +18,8 @@ from agents.manager_t import ManagerT
 try:
     from agents.graph import TeamHGraph
     __all__ = [
-        "ManagerBase",
+        "AgentBase",
+        "ManagerD",
         "ManagerI",
         "ManagerM",
         "ManagerS",
@@ -26,7 +28,8 @@ try:
     ]
 except ImportError:
     __all__ = [
-        "ManagerBase",
+        "AgentBase",
+        "ManagerD",
         "ManagerI",
         "ManagerM",
         "ManagerS",

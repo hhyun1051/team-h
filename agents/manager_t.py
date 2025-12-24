@@ -9,7 +9,7 @@ Manager T는 시간 관리와 일정 관리를 담당하는 에이전트입니�
 - 스마트 알림 및 일정 요약
 - 반복 일정 관리
 
-ManagerBase를 상속받아 공통 로직을 재사용합니다.
+AgentBase를 상속받아 공통 로직을 재사용합니다.
 HumanInTheLoopMiddleware를 통해 일정 생성/수정/삭제 작업에 대한 승인을 요구합니다.
 """
 
@@ -25,7 +25,7 @@ project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
 # Agents import (__init__.py 활용)
-from agents import ManagerBase
+from agents import AgentBase
 from agents.context import TeamHContext
 from agents.middleware import HumanInTheLoopMiddleware
 from langchain.tools import tool, ToolRuntime
@@ -70,8 +70,10 @@ class CalendarEventSchema(BaseModel):
 # Manager T 클래스
 # ============================================================================
 
-class ManagerT(ManagerBase):
+class ManagerT(AgentBase):
     """Manager T 에이전트 클래스 - 캘린더 및 시간 관리 전문"""
+
+    prompt_filename = "manager_t.yaml"
 
     def __init__(
         self,
