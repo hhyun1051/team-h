@@ -25,9 +25,6 @@ class AgentBase(ABC):
     # 프롬프트 디렉토리 경로
     PROMPTS_DIR = Path(__file__).parent / "prompts"
 
-    # 기본 Context Schema (자식 클래스에서 오버라이드 가능)
-    CONTEXT_SCHEMA = TeamHContext
-
     @property
     @abstractmethod
     def prompt_filename(self) -> str:
@@ -46,7 +43,7 @@ class AgentBase(ABC):
         additional_tools: Optional[List] = None,
         additional_middleware: Optional[List] = None,
         enable_langfuse_logging: bool = False,
-        context_schema: Optional[type] = None,
+        context_schema: Optional[type] = None, # 이 프로젝트에서는 graph에서 context를 관리하므로 사용x
         **kwargs,
     ):
         """
