@@ -32,6 +32,10 @@ load_dotenv(project_root / ".env")
 from agents.graph import TeamHGraph
 from langgraph.types import Command
 
+# Import Langfuse
+from langfuse import Langfuse, get_client
+from langfuse.langchain import CallbackHandler
+
 # Import models
 try:
     from .models import ChatRequest, ResumeRequest, InterruptResponse, StateResponse
@@ -67,6 +71,15 @@ async def lifespan(app: FastAPI):
     모든 요청에서 재사용합니다.
     """
     global _agent
+
+    # Startup: Langfuse singleton 초기화 (middleware가 사용)
+    print("[🔧] Initializing Langfuse singleton...")
+    Langfuse(
+        public_key=os.getenv("LANGFUSE_PUBLIC_KEY"),
+        secret_key=os.getenv("LANGFUSE_SECRET_KEY"),
+        host=os.getenv("LANGFUSE_BASE_URL", "http://localhost:3000"),
+    )
+    print("[✅] Langfuse singleton initialized")
 
     # Startup: Agent 한 번만 생성
     print("[🚀] Initializing TeamHGraph (once)...")
@@ -381,6 +394,7 @@ async def chat_stream(request: ChatRequest):
     - Agent 재사용 (전역 인스턴스)
     - thread_id로 상태 자동 복원 (PostgreSQL checkpointer)
     - astream_events()로 실시간 토큰 스트리밍
+    - Langfuse CallbackHandler로 전체 흐름 로깅
 
     Args:
         request: ChatRequest (message, thread_id, user_id, session_id)
@@ -393,14 +407,18 @@ async def chat_stream(request: ChatRequest):
 
         session_id = request.session_id or request.thread_id
 
-        # Config (thread_id만 checkpointer용으로 전달)
+        # CallbackHandler 생성
+        langfuse_handler = CallbackHandler()
+
+        # Config (thread_id + callbacks + metadata)
         config = {
             "configurable": {
                 "thread_id": request.thread_id,
             },
+            "callbacks": [langfuse_handler],  # Langfuse 전체 흐름 로깅
             "metadata": {
-                "langfuse_session_id": session_id,
                 "langfuse_user_id": request.user_id,
+                "langfuse_session_id": session_id,
                 "langfuse_tags": ["team-h", "api", "streaming"],
             }
         }
@@ -446,6 +464,7 @@ async def chat_resume(request: ResumeRequest):
     - 같은 agent 재사용 (전역 인스턴스)
     - thread_id로 상태 복원
     - Command(resume=...)로 인터럽트 재개
+    - Langfuse CallbackHandler로 전체 흐름 로깅
 
     Args:
         request: ResumeRequest (thread_id, decisions, user_id, session_id)
@@ -458,14 +477,18 @@ async def chat_resume(request: ResumeRequest):
 
         session_id = request.session_id or request.thread_id
 
-        # Config (thread_id만 checkpointer용으로 전달)
+        # CallbackHandler 생성
+        langfuse_handler = CallbackHandler()
+
+        # Config (thread_id + callbacks + metadata)
         config = {
             "configurable": {
                 "thread_id": request.thread_id,
             },
+            "callbacks": [langfuse_handler],  # Langfuse 전체 흐름 로깅
             "metadata": {
-                "langfuse_session_id": session_id,
                 "langfuse_user_id": request.user_id,
+                "langfuse_session_id": session_id,
                 "langfuse_tags": ["team-h", "api", "resume"],
             }
         }

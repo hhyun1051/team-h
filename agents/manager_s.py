@@ -68,7 +68,7 @@ class ManagerS(ManagerBase):
             model_name=model_name,
             temperature=temperature,
             additional_tools=additional_tools,
-            additional_middleware=middleware,
+            additional_middleware=additional_middleware,
         )
 
         # 추가 초기화 메시지

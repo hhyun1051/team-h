@@ -34,7 +34,7 @@ class ManagerBase(ABC):
         temperature: float = 0.7,
         additional_tools: Optional[List] = None,
         additional_middleware: Optional[List] = None,
-        enable_langfuse_logging: bool = True,
+        enable_langfuse_logging: bool = False,
         context_schema: Optional[type] = None,
         **kwargs,
     ):
