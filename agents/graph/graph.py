@@ -19,13 +19,12 @@ from psycopg_pool import AsyncConnectionPool
 from psycopg.rows import dict_row
 
 # Langfuse 통합
-from langfuse import observe, get_client
-from langfuse.langchain import CallbackHandler
+# Note: CallbackHandler는 api/main.py에서 사용
+# Middleware는 ManagerBase에서 자동 추가
 
 # Agents import
 from agents import ManagerI, ManagerM, ManagerS, ManagerT
 from agents.context import TeamHContext
-from agents.middleware import LangfuseToolLoggingMiddleware, ToolErrorHandlerMiddleware
 
 # Utils import
 from utils.llm_factory import create_llm
@@ -114,9 +113,6 @@ class TeamHGraph(NodesMixin):
 
         # 환경 변수 로딩 (한 번만)
         self._load_env()
-
-        # Langfuse 초기화 (환경 변수 기반)
-        self._init_langfuse()
 
         # PostgreSQL Checkpoint 초기화
         self.use_postgres_checkpoint = use_postgres_checkpoint
@@ -226,165 +222,11 @@ class TeamHGraph(NodesMixin):
     # ========================================================================
     # 외부 인터페이스
     # ========================================================================
-
-    @observe(name="team-h-graph-invoke", capture_input=True, capture_output=True)
-    def invoke(
-        self,
-        message: str,
-        user_id: str = "default_user",
-        thread_id: str = "default",
-        session_id: Optional[str] = None,
-        callbacks: Optional[List] = None,
-    ) -> Dict[str, Any]:
-        """
-        그래프 실행
-
-        Args:
-            message: 사용자 메시지
-            user_id: 사용자 ID (예: "user-123", 로그인 시스템에서 제공)
-            thread_id: PostgreSQL checkpoint thread ID (대화 세션 식별)
-            session_id: Langfuse session ID (옵션, 없으면 thread_id 사용)
-            callbacks: Langfuse CallbackHandler 등의 콜백 리스트
-
-        Returns:
-            최종 상태
-
-        Note:
-            통합 ID 전략:
-            - thread_id: PostgreSQL checkpoint (대화 저장/재개)
-            - session_id: Langfuse 추적 (없으면 thread_id 사용)
-            - user_id: 사용자 식별 (PostgreSQL + Langfuse)
-        """
-        # session_id가 없으면 thread_id를 session_id로 사용 (통합 전략)
-        if session_id is None:
-            session_id = thread_id
-
-        # Langfuse CallbackHandler 자동 생성
-        if callbacks is None and self.langfuse_client:
-            try:
-                # v3: session_id, user_id는 metadata로 전달
-                langfuse_handler = CallbackHandler()
-                callbacks = [langfuse_handler]
-            except Exception as e:
-                print(f"[⚠️] Failed to create Langfuse handler: {e}")
-                callbacks = []
-
-        # Context 생성 (TeamHContext)
-        context = TeamHContext(
-            user_id=user_id,
-            thread_id=thread_id,
-            session_id=session_id
-        )
-
-        config = {
-            "configurable": {"thread_id": thread_id},
-            "callbacks": callbacks or [],
-            "metadata": {
-                "langfuse_session_id": session_id,  # Langfuse v3: metadata로 session_id 전달
-                "langfuse_user_id": user_id,        # Langfuse v3: metadata로 user_id 전달
-                "langfuse_tags": ["team-h", "graph"],
-            }
-        }
-
-        initial_state = {
-            "messages": [HumanMessage(content=message)],
-            "handoff_count": 0,
-        }
-
-        result = self.graph.invoke(initial_state, config, context=context)
-        return result
-
-    def invoke_command(
-        self,
-        command: Any,
-        config: Dict[str, Any],
-        user_id: str = "default_user",
-        thread_id: str = "default",
-        session_id: Optional[str] = None,
-    ) -> Dict[str, Any]:
-        """
-        Command를 사용하여 그래프 재개 (HITL 지원)
-
-        Args:
-            command: LangGraph Command 객체 (resume 등)
-            config: 그래프 설정 (thread_id 포함)
-            user_id: 사용자 ID
-            thread_id: 스레드 ID
-            session_id: Langfuse 세션 ID (옵션)
-
-        Returns:
-            그래프 실행 결과
-        """
-        # Context 생성 (tools에서 runtime.context로 접근 가능)
-        context = TeamHContext(
-            user_id=user_id,
-            thread_id=thread_id,
-            session_id=session_id or thread_id
-        )
-
-        result = self.graph.invoke(command, config, context=context)
-        return result
-
-    @observe(name="team-h-graph-stream", capture_input=True, capture_output=True)
-    def stream(
-        self,
-        message: str,
-        user_id: str = "default_user",
-        thread_id: str = "default",
-        session_id: Optional[str] = None,
-        callbacks: Optional[List] = None,
-    ):
-        """
-        그래프 스트리밍 실행
-
-        Args:
-            message: 사용자 메시지
-            user_id: 사용자 ID (예: "user-123")
-            thread_id: PostgreSQL checkpoint thread ID (대화 세션 식별)
-            session_id: Langfuse session ID (옵션, 없으면 thread_id 사용)
-            callbacks: Langfuse CallbackHandler 등의 콜백 리스트
-
-        Yields:
-            각 노드 실행 결과
-        """
-        # session_id가 없으면 thread_id를 session_id로 사용
-        if session_id is None:
-            session_id = thread_id
-
-        # Langfuse CallbackHandler 자동 생성
-        if callbacks is None and self.langfuse_client:
-            try:
-                # v3: session_id, user_id는 metadata로 전달
-                langfuse_handler = CallbackHandler()
-                callbacks = [langfuse_handler]
-            except Exception as e:
-                print(f"[⚠️] Failed to create Langfuse handler: {e}")
-                callbacks = []
-
-        # Context 생성 (TeamHContext)
-        context = TeamHContext(
-            user_id=user_id,
-            thread_id=thread_id,
-            session_id=session_id
-        )
-
-        config = {
-            "configurable": {"thread_id": thread_id},
-            "callbacks": callbacks or [],
-            "metadata": {
-                "langfuse_session_id": session_id,  # Langfuse v3: metadata로 session_id 전달
-                "langfuse_user_id": user_id,        # Langfuse v3: metadata로 user_id 전달
-                "langfuse_tags": ["team-h", "graph"],
-            }
-        }
-
-        initial_state = {
-            "messages": [HumanMessage(content=message)],
-            "handoff_count": 0,
-        }
-
-        for chunk in self.graph.stream(initial_state, config, context=context):
-            yield chunk
+    # Note: invoke(), stream(), invoke_command() 메서드는 제거되었습니다.
+    # FastAPI (api/main.py)에서 self.graph.astream_events()를 직접 사용합니다.
+    # Langfuse 로깅은 다음 두 계층에서 처리됩니다:
+    # 1. Graph 레벨: config["callbacks"]에 CallbackHandler 추가 (api/main.py)
+    # 2. Tool 레벨: LangfuseToolLoggingMiddleware (ManagerBase)
 
     def get_graph_visualization(self) -> str:
         """
@@ -411,22 +253,6 @@ class TeamHGraph(NodesMixin):
         if env_path.exists():
             load_dotenv(env_path)
 
-    def _init_langfuse(self):
-        """Langfuse 초기화 (환경 변수 기반)"""
-        try:
-            # Langfuse v3: singleton client 사용 (환경 변수 자동 사용)
-            # LANGFUSE_SECRET_KEY, LANGFUSE_PUBLIC_KEY, LANGFUSE_BASE_URL
-            self.langfuse_client = get_client()
-            print(f"[✅] Langfuse initialized: {os.getenv('LANGFUSE_BASE_URL')}")
-
-            # Tool call 로깅을 위한 공통 middleware 생성
-            # v3에서는 middleware가 내부적으로 get_client()를 호출함
-            self.tool_logging_middleware = LangfuseToolLoggingMiddleware(verbose=True)
-            print(f"[✅] Langfuse tool logging middleware created")
-        except Exception as e:
-            print(f"[⚠️] Langfuse initialization failed: {e}")
-            self.langfuse_client = None
-            self.tool_logging_middleware = None
 
     def _init_postgres_checkpoint(self):
         """PostgreSQL checkpoint 초기화"""
@@ -658,20 +484,15 @@ class TeamHGraph(NodesMixin):
             초기화된 Manager 인스턴스 또는 None (실패 시)
         """
         try:
-            # 공통 middleware 리스트
-            common_middlewares = []
-            if self.tool_logging_middleware:
-                common_middlewares.append(self.tool_logging_middleware)
-
             # handoff tools 가져오기
             handoff_tools = self._get_handoff_tools_for_manager(manager_key)
 
             # Manager 초기화
+            # Note: ManagerBase가 내부적으로 Langfuse 미들웨어를 자동으로 추가함
             manager = manager_class(
                 model_name=self.model_name,
                 temperature=self.temperature,
                 additional_tools=handoff_tools if handoff_tools else None,
-                middleware=common_middlewares if common_middlewares else None,
                 **init_kwargs
             )
             print(f"[✅] Manager {manager_key.upper()} initialized")

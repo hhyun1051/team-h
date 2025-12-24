@@ -81,7 +81,7 @@ class ManagerT(ManagerBase):
         google_token_path: Optional[str] = None,
         calendar_id: str = "primary",
         additional_tools: Optional[List] = None,
-        middleware: Optional[List] = None,
+        additional_middleware: Optional[List] = None,
     ):
         """
         Manager T 에이전트 초기화
@@ -93,7 +93,7 @@ class ManagerT(ManagerBase):
             google_token_path: Google OAuth token.json 저장 경로
             calendar_id: 사용할 Google Calendar ID (기본값: primary)
             additional_tools: 핸드오프 등 추가 툴 리스트
-            middleware: 외부에서 주입할 middleware 리스트
+            additional_middleware: 외부에서 주입할 middleware 리스트
         """
         if not GOOGLE_AVAILABLE:
             raise ImportError("Google API libraries are required for Manager T. Please install them first.")
@@ -109,18 +109,18 @@ class ManagerT(ManagerBase):
             description_prefix="📅 Calendar operation pending approval",
         )
 
-        # middleware 리스트 합치기 (외부 middleware + HITL)
-        combined_middleware = []
-        if middleware:
-            combined_middleware.extend(middleware)
-        combined_middleware.append(hitl_middleware)
+        # HITL middleware 추가 (외부 middleware와 결합)
+        # ManagerBase가 자동으로 Langfuse 미들웨어를 추가함
+        combined_middleware = [hitl_middleware]
+        if additional_middleware:
+            combined_middleware.extend(additional_middleware)
 
         # 베이스 클래스 초기화 (공통 로직)
         super().__init__(
             model_name=model_name,
             temperature=temperature,
             additional_tools=additional_tools,
-            middleware=combined_middleware,
+            additional_middleware=combined_middleware,
             # Google Calendar 초기화를 위한 파라미터 전달
             google_credentials_path=google_credentials_path,
             google_token_path=google_token_path,

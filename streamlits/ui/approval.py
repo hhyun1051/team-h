@@ -32,54 +32,20 @@ def fetch_memory_content(memory_id: str) -> Optional[str]:
     """
     메모리 ID로 실제 메모리 내용을 가져옴
 
+    Note: FastAPI 백엔드 분리 후 메모리 조회 API가 필요합니다.
+    현재는 memory_id만 표시됩니다.
+
+    TODO: FastAPI에 /memory/{memory_id} 엔드포인트 추가
+
     Args:
         memory_id: 조회할 메모리 ID
 
     Returns:
         메모리 내용 문자열, 실패 시 None
     """
-    try:
-        # 디버깅: 시작
-        print(f"[DEBUG] fetch_memory_content called with memory_id: {memory_id}")
-
-        # TeamHGraph의 manager_m 인스턴스에 접근
-        if hasattr(st.session_state, 'agent'):
-            print(f"[DEBUG] st.session_state.agent exists")
-            agent = st.session_state.agent
-
-            if hasattr(agent, 'manager_m'):
-                print(f"[DEBUG] agent.manager_m exists: {agent.manager_m}")
-
-                if agent.manager_m is not None:
-                    print(f"[DEBUG] agent.manager_m is not None")
-
-                    # get_memory_by_id 메서드 사용
-                    memory = agent.manager_m.memory.get_memory_by_id(memory_id)
-                    print(f"[DEBUG] Retrieved memory: {memory}")
-
-                    if memory:
-                        content = memory.get('content', 'No content')
-                        memory_type = memory.get('type', 'unknown')
-                        result = f"[{memory_type}] {content}"
-                        print(f"[DEBUG] Returning: {result}")
-                        return result
-                    else:
-                        print(f"[DEBUG] memory is None")
-                else:
-                    print(f"[DEBUG] agent.manager_m is None")
-            else:
-                print(f"[DEBUG] agent.manager_m does not exist")
-        else:
-            print(f"[DEBUG] st.session_state.agent does not exist")
-
-    except Exception as e:
-        import traceback
-        print(f"[DEBUG] Exception occurred: {str(e)}")
-        print(f"[DEBUG] Traceback: {traceback.format_exc()}")
-        return f"⚠️ 메모리 조회 실패: {str(e)}"
-
-    print(f"[DEBUG] Returning None")
-    return None
+    # FastAPI 백엔드 분리 후에는 API 호출로 변경 필요
+    # 현재는 임시로 memory_id만 반환
+    return f"Memory ID: {memory_id}\n(내용 조회는 FastAPI 백엔드에 /memory/{{memory_id}} 엔드포인트 추가 필요)"
 
 
 def render_action_card(
@@ -133,26 +99,9 @@ def render_action_card(
             memory_id = args.get('memory_id')
 
             if memory_id:
-                st.markdown("**🗑️ 삭제할 메모리 내용:**")
-
-                # 디버깅: UI에 표시
-                with st.expander("🐛 디버그 정보", expanded=False):
-                    st.write(f"memory_id: `{memory_id}`")
-                    st.write(f"session_state.agent exists: {hasattr(st.session_state, 'agent')}")
-                    if hasattr(st.session_state, 'agent'):
-                        agent = st.session_state.agent
-                        st.write(f"agent type: {type(agent)}")
-                        st.write(f"agent.manager_m exists: {hasattr(agent, 'manager_m')}")
-                        if hasattr(agent, 'manager_m'):
-                            st.write(f"agent.manager_m: {agent.manager_m}")
-                            st.write(f"agent.manager_m is None: {agent.manager_m is None}")
-
+                st.markdown("**🗑️ 삭제할 메모리:**")
                 memory_content = fetch_memory_content(memory_id)
-
-                if memory_content:
-                    st.warning(f"**{memory_content}**")
-                else:
-                    st.error(f"메모리 ID `{memory_id}`의 내용을 불러올 수 없습니다")
+                st.info(memory_content)
 
         # Arguments 표시
         st.markdown(f"**🔧 Arguments:**")

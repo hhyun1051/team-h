@@ -16,6 +16,7 @@ from typing import Optional, List, Dict, Any
 from pathlib import Path
 from langchain.agents import create_agent
 from agents.context import TeamHContext
+from agents.middleware import LangfuseToolLoggingMiddleware
 from utils.llm_factory import create_llm
 
 class ManagerBase(ABC):
@@ -32,7 +33,8 @@ class ManagerBase(ABC):
         model_name: str = "gpt-4o-mini",
         temperature: float = 0.7,
         additional_tools: Optional[List] = None,
-        middleware: Optional[List] = None,
+        additional_middleware: Optional[List] = None,
+        enable_langfuse_logging: bool = True,
         context_schema: Optional[type] = None,
         **kwargs,
     ):
@@ -43,7 +45,8 @@ class ManagerBase(ABC):
             model_name: 사용할 LLM 모델 이름 (기본값: gpt-4o-mini)
             temperature: 모델 temperature 설정
             additional_tools: 핸드오프 등 추가 툴 리스트
-            middleware: 에이전트 미들웨어 리스트 (예: HumanInTheLoopMiddleware)
+            additional_middleware: 추가 미들웨어 리스트 (예: HumanInTheLoopMiddleware)
+            enable_langfuse_logging: Langfuse 툴 로깅 활성화 여부 (기본값: True)
             context_schema: Runtime context 스키마 (기본값: TeamHContext)
             **kwargs: 자식 클래스의 특수 파라미터
         """
@@ -80,6 +83,22 @@ class ManagerBase(ABC):
         # 공통 마지막 메시지 추가
         system_prompt += self._get_closing_prompt()
 
+        # 미들웨어 구성
+        # 1. 기본 미들웨어: Langfuse 툴 로깅 (선택적)
+        middlewares = []
+        if enable_langfuse_logging:
+            try:
+                langfuse_middleware = LangfuseToolLoggingMiddleware(verbose=True)
+                middlewares.append(langfuse_middleware)
+                print(f"[📊] Langfuse tool logging enabled")
+            except Exception as e:
+                print(f"[⚠️] Langfuse middleware initialization failed: {e}")
+
+        # 2. 추가 미들웨어 병합
+        if additional_middleware:
+            middlewares.extend(additional_middleware)
+            print(f"[➕] Added {len(additional_middleware)} additional middleware(s)")
+
         # 에이전트 생성 (LangChain v1)
         # Note: checkpointer는 사용하지 않음
         # TeamHGraph가 상위 레벨에서 상태를 관리하고,
@@ -92,8 +111,8 @@ class ManagerBase(ABC):
         }
 
         # 미들웨어가 있으면 추가
-        if middleware:
-            agent_kwargs["middleware"] = middleware
+        if middlewares:
+            agent_kwargs["middleware"] = middlewares
 
         self.agent = create_agent(**agent_kwargs)
 

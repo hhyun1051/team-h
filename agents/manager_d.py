@@ -52,7 +52,7 @@ class ManagerD(ManagerBase):
         workspace_dir: str = "./workspace",
         existing_managers: Optional[Dict[str, Any]] = None,
         additional_tools: Optional[List] = None,
-        middleware: Optional[List] = None,
+        additional_middleware: Optional[List] = None,
         enable_summarization: bool = True,
         max_context_tokens: int = 170000,
     ):
@@ -65,7 +65,7 @@ class ManagerD(ManagerBase):
             workspace_dir: 작업 파일을 저장할 디렉토리
             existing_managers: 기존 Manager 인스턴스 dict (예: {'m': manager_m, 's': manager_s})
             additional_tools: 핸드오프 등 추가 툴 리스트
-            middleware: 외부에서 전달받은 미들웨어 리스트 (Langfuse 로깅 등)
+            additional_middleware: 외부에서 전달받은 미들웨어 리스트
             enable_summarization: 자동 요약 활성화 여부
             max_context_tokens: 요약을 트리거하는 최대 컨텍스트 토큰 수
         """
@@ -107,10 +107,11 @@ class ManagerD(ManagerBase):
                 SummarizationMiddleware(model=model, max_tokens=max_context_tokens)
             )
 
-        # 외부 미들웨어와 합치기
+        # 외부 미들웨어와 deepagents middleware 합치기
+        # ManagerBase가 자동으로 Langfuse 미들웨어를 추가함
         combined_middleware = []
-        if middleware:
-            combined_middleware.extend(middleware)
+        if additional_middleware:
+            combined_middleware.extend(additional_middleware)
         combined_middleware.extend(deep_middlewares)
 
         # 베이스 클래스 초기화 (공통 로직)
@@ -118,7 +119,7 @@ class ManagerD(ManagerBase):
             model_name=model_name,
             temperature=temperature,
             additional_tools=additional_tools,
-            middleware=combined_middleware,
+            additional_middleware=combined_middleware,
         )
 
         # 추가 초기화 메시지

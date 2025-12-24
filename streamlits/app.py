@@ -8,11 +8,8 @@ import sys
 import os
 from pathlib import Path
 import streamlit as st
-from typing import Dict, Any, Optional
 from dotenv import load_dotenv
-import json
 import uuid
-from openai import OpenAI
 
 project_root = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(project_root))
@@ -20,23 +17,9 @@ sys.path.insert(0, str(project_root))
 # 프로젝트 루트의 .env 로드
 load_dotenv(project_root / ".env")
 
-# Agents import
-try:
-    from agents.graph import TeamHGraph
-    from langchain_core.messages import AIMessage
-    from langgraph.types import Command
-except ImportError as e:
-    st.error(f"""
-    ❌ TeamHGraph import 실패!
-
-    필요한 패키지를 설치하세요:
-    ```bash
-    pip install langfuse langgraph
-    ```
-
-    에러: {e}
-    """)
-    st.stop()
+# Note: TeamHGraph import 제거됨 (백엔드 분리 원칙)
+# FastAPI (api/main.py)가 TeamHGraph를 관리하고,
+# 이 Streamlit 앱은 FastAPI 클라이언트로만 동작합니다.
 
 # 공통 컴포넌트 import
 from streamlits.ui.components import (
@@ -98,6 +81,7 @@ def initialize_session_state():
         user_id=DEFAULT_VALUES["user_id"],
         thread_id=st.session_state.session_id,  # session_id를 thread_id로 사용
         pending_approval=None,
+        approval_decisions={},  # HITL 승인 결정 저장
         # UI 설정
         view_mode="💬 채팅",  # 화면 모드 (채팅/옵션)
         input_mode="💬 텍스트",  # 입력 방식 (텍스트/음성)
@@ -113,272 +97,9 @@ def initialize_session_state():
 
 
 # ============================================================================
-# 응답 처리
+# 응답 처리 - FastAPI 클라이언트를 통한 스트리밍으로 처리
 # ============================================================================
-
-def extract_response(response: Dict[str, Any]) -> tuple[str, Optional[str]]:
-    """응답에서 메시지 추출"""
-    messages = response.get("messages", [])
-
-    # current_agent 또는 last_active_manager에서 agent_name 추출
-    current_agent = response.get("current_agent") or response.get("last_active_manager")
-
-    # agent_name 매핑 (i, m, s, t -> Manager I, Manager M 등)
-    agent_name_map = {
-        "i": "Manager I",
-        "m": "Manager M",
-        "s": "Manager S",
-        "t": "Manager T",
-    }
-    agent_name = agent_name_map.get(current_agent) if current_agent else None
-
-    for msg in reversed(messages):
-        if isinstance(msg, AIMessage) and msg.content:
-            return msg.content, agent_name
-
-    return "응답을 받지 못했습니다.", agent_name
-
-
-# ============================================================================
-# HITL 승인 UI (Legacy - 사용 안 함)
-# ============================================================================
-# 새로운 approval_ui_refactored.py 사용
-# 기존 코드는 백업용으로 보관
-
-def render_approval_ui_legacy():
-    """HITL 승인 UI"""
-    if not st.session_state.pending_approval:
-        return False
-
-    approval_data = st.session_state.pending_approval
-    interrupt = approval_data["interrupt"]
-    config = approval_data["config"]
-
-    st.divider()
-    st.warning("⏸️ 승인이 필요한 작업이 있습니다", icon="✋")
-
-    # 전체 interrupt 구조 확인 (디버깅용)
-    with st.expander("🐛 디버그: 전체 구조", expanded=False):
-        st.code(f"Type: {type(interrupt.value).__name__}")
-        try:
-            st.code(json.dumps(interrupt.value, indent=2, default=str))
-        except:
-            st.text(str(interrupt.value))
-
-    # action_requests 안전하게 추출
-    try:
-        action_requests = interrupt.value.get("action_requests", [])
-        review_configs = interrupt.value.get("review_configs", [])
-
-        if not action_requests:
-            st.error("❌ action_requests가 비어있습니다")
-            st.session_state.pending_approval = None
-            return False
-
-        # 각 작업 표시
-        for idx, (action, review) in enumerate(zip(action_requests, review_configs)):
-            with st.expander(f"🔍 작업 {idx + 1}: {action.get('name', 'Unknown')}", expanded=True):
-                # 설명
-                st.markdown(f"**설명:**")
-                st.text(action.get('description', 'N/A'))
-
-                # 전체 action 정보 (디버깅)
-                with st.expander("상세 정보", expanded=False):
-                    st.json(action)
-
-                # 승인 가능한 결정 타입
-                allowed = review.get("allowed_decisions", ["approve", "reject"])
-                st.caption(f"허용된 결정: {', '.join(allowed)}")
-
-                # Edit 모드 체크
-                edit_mode_key = f"edit_mode_{idx}"
-                if edit_mode_key not in st.session_state:
-                    st.session_state[edit_mode_key] = False
-
-                # Edit 모드가 활성화된 경우
-                if st.session_state[edit_mode_key]:
-                    st.info("✏️ 편집 모드: 아래에서 tool arguments를 수정하세요")
-
-                    # Arguments 표시 및 수정
-                    original_args = action.get('arguments', {})
-                    tool_name = action.get('name', '')
-
-                    st.markdown(f"**Tool Name:** `{tool_name}`")
-
-                    # JSON 형태로 arguments 편집
-                    args_json = json.dumps(original_args, indent=2, ensure_ascii=False)
-                    edited_args_json = st.text_area(
-                        "Arguments (JSON 형식):",
-                        value=args_json,
-                        height=200,
-                        key=f"edit_args_{idx}"
-                    )
-
-                    col1, col2 = st.columns(2)
-
-                    # 편집 완료 버튼
-                    if col1.button("✅ 편집 완료", key=f"submit_edit_{idx}", use_container_width=True):
-                        try:
-                            edited_args = json.loads(edited_args_json)
-                            edited_tool_name = st.session_state.get(f"edit_tool_name_{idx}", tool_name)
-
-                            # 모든 action_requests에 대해 decisions 생성
-                            # 현재 편집 중인 것은 edit, 나머지는 거부
-                            num_actions = len(action_requests)
-                            decisions = []
-                            for i in range(num_actions):
-                                if i == idx:
-                                    decisions.append({
-                                        "type": "edit",
-                                        "edited_action": {
-                                            "name": edited_tool_name,
-                                            "args": edited_args
-                                        }
-                                    })
-                                else:
-                                    decisions.append({"type": "reject", "message": "사용자가 다른 작업만 편집함"})
-
-                            result = st.session_state.agent.invoke_command(
-                                Command(resume={"decisions": decisions}),
-                                config=approval_data["config"],
-                                user_id=approval_data["user_id"],
-                                thread_id=approval_data["thread_id"],
-                                session_id=approval_data["session_id"]
-                            )
-
-                            msg, agent_name = extract_response(result)
-                            st.session_state.messages.append({
-                                "role": "assistant",
-                                "content": msg,
-                                "agent_name": agent_name,
-                            })
-
-                            st.session_state[edit_mode_key] = False
-                            st.session_state.pending_approval = None
-                            st.success("✅ 편집 완료 및 실행!")
-                            st.rerun()
-                        except json.JSONDecodeError as e:
-                            st.error(f"❌ JSON 파싱 오류: {e}")
-                        except Exception as e:
-                            st.error(f"편집 완료 중 오류: {e}")
-                            render_error_expander()
-
-                    # 편집 취소 버튼
-                    if col2.button("↩️ 취소", key=f"cancel_edit_{idx}", use_container_width=True):
-                        st.session_state[edit_mode_key] = False
-                        st.rerun()
-
-                # 일반 모드 (버튼들)
-                else:
-                    num_buttons = sum([
-                        "approve" in allowed,
-                        "edit" in allowed,
-                        "reject" in allowed
-                    ])
-
-                    if num_buttons == 3:
-                        col1, col2, col3 = st.columns(3)
-                    elif num_buttons == 2:
-                        col1, col2 = st.columns(2)
-                        col3 = None
-                    else:
-                        col1 = st
-                        col2 = None
-                        col3 = None
-
-                    # 승인 버튼
-                    if "approve" in allowed:
-                        target_col = col1 if num_buttons >= 1 else st
-                        if target_col.button("✅ 승인", key=f"approve_{idx}", use_container_width=True):
-                            try:
-                                # 현재 작업만 승인, 나머지는 거부
-                                num_actions = len(action_requests)
-                                decisions = []
-                                for i in range(num_actions):
-                                    if i == idx:
-                                        decisions.append({"type": "approve"})
-                                    else:
-                                        decisions.append({"type": "reject", "message": "사용자가 다른 작업만 승인함"})
-                                result = st.session_state.agent.invoke_command(
-                                    Command(resume={"decisions": decisions}),
-                                    config=approval_data["config"],
-                                    user_id=approval_data["user_id"],
-                                    thread_id=approval_data["thread_id"],
-                                    session_id=approval_data["session_id"]
-                                )
-
-                                msg, agent_name = extract_response(result)
-                                st.session_state.messages.append({
-                                    "role": "assistant",
-                                    "content": msg,
-                                    "agent_name": agent_name,
-                                })
-
-                                st.session_state.pending_approval = None
-                                st.success("✅ 승인 완료!")
-                                st.rerun()
-                            except Exception as e:
-                                st.error(f"승인 중 오류: {e}")
-
-                    # 편집 버튼
-                    if "edit" in allowed:
-                        target_col = col2 if num_buttons >= 2 else col1 if num_buttons >= 1 else st
-                        if target_col.button("✏️ 편집", key=f"edit_{idx}", use_container_width=True):
-                            st.session_state[edit_mode_key] = True
-                            st.rerun()
-
-                    # 거부 버튼
-                    if "reject" in allowed:
-                        if num_buttons == 3:
-                            target_col = col3
-                        elif num_buttons == 2 and "edit" not in allowed:
-                            target_col = col2
-                        elif num_buttons == 2 and "approve" not in allowed:
-                            target_col = col2
-                        else:
-                            target_col = col1 if num_buttons >= 1 else st
-
-                        if target_col.button("❌ 거부", key=f"reject_{idx}", use_container_width=True):
-                            reject_reason = st.session_state.get(f"reject_reason_{idx}", "사용자가 거부했습니다")
-
-                            try:
-                                # 현재 작업만 거부, 나머지는 거부 (모두 거부)
-                                num_actions = len(action_requests)
-                                decisions = []
-                                for i in range(num_actions):
-                                    if i == idx:
-                                        decisions.append({"type": "reject", "message": reject_reason})
-                                    else:
-                                        decisions.append({"type": "reject", "message": "사용자가 다른 작업만 처리함"})
-                                result = st.session_state.agent.invoke_command(
-                                    Command(resume={"decisions": decisions}),
-                                    config=approval_data["config"],
-                                    user_id=approval_data["user_id"],
-                                    thread_id=approval_data["thread_id"],
-                                    session_id=approval_data["session_id"]
-                                )
-
-                                msg, agent_name = extract_response(result)
-                                st.session_state.messages.append({
-                                    "role": "assistant",
-                                    "content": msg,
-                                    "agent_name": agent_name,
-                                })
-
-                                st.session_state.pending_approval = None
-                                st.info("ℹ️ 거부 완료")
-                                st.rerun()
-                            except Exception as e:
-                                st.error(f"거부 중 오류: {e}")
-
-        st.divider()
-        return True
-
-    except Exception as e:
-        st.error(f"❌ 승인 UI 렌더링 오류: {e}")
-        render_error_expander("상세 오류")
-        st.session_state.pending_approval = None
-        return False
+# 응답은 SSE 스트림으로 실시간 수신됩니다
 
 
 # ============================================================================
@@ -472,9 +193,8 @@ elif st.session_state.view_mode == "⚙️ 옵션":
         st.session_state.session_id = str(uuid.uuid4())
         st.session_state.thread_id = st.session_state.session_id
         st.session_state.messages = []
-        st.session_state.routing_history = []
         st.session_state.pending_approval = None
-        # 에이전트는 유지 (캐싱된 인스턴스 재사용)
+        st.session_state.approval_decisions = {}
         print(f"[🔄] Session changed: {old_session[:8]}... → {st.session_state.session_id[:8]}...")
         st.success("새 대화를 시작했습니다!")
         st.rerun()
@@ -513,48 +233,21 @@ elif st.session_state.view_mode == "⚙️ 옵션":
     st.divider()
 
     # ========================================================================
-    # Manager 활성화 설정
+    # Manager 활성화 설정 (백엔드에서 관리)
     # ========================================================================
     st.subheader("🤖 Manager 활성화")
 
-    st.caption("사용할 Manager를 선택하세요. 변경 후 '적용' 버튼을 눌러야 합니다.")
+    st.info("""
+    ℹ️ Manager 설정은 FastAPI 백엔드에서 환경 변수로 관리됩니다.
 
-    col1, col2 = st.columns(2)
-    with col1:
-        enable_i = st.checkbox("🏠 Manager I (IoT)", value=st.session_state.enable_manager_i)
-        enable_m = st.checkbox("🧠 Manager M (메모리)", value=st.session_state.enable_manager_m)
-    with col2:
-        enable_s = st.checkbox("🔍 Manager S (검색)", value=st.session_state.enable_manager_s)
-        enable_t = st.checkbox("📅 Manager T (캘린더)", value=st.session_state.enable_manager_t)
+    `.env` 파일에서 다음 설정을 변경하세요:
+    - `HOMEASSISTANT_TOKEN` (Manager I)
+    - `TAVILY_API_KEY` (Manager S)
+    - `GOOGLE_CALENDAR_CREDENTIALS_PATH` (Manager T)
+    - Manager M은 항상 활성화됩니다.
 
-    # 변경사항 확인
-    has_changes = (
-        enable_i != st.session_state.enable_manager_i or
-        enable_m != st.session_state.enable_manager_m or
-        enable_s != st.session_state.enable_manager_s or
-        enable_t != st.session_state.enable_manager_t
-    )
-
-    if has_changes:
-        st.warning("⚠️ Manager 설정이 변경되었습니다. 적용하려면 아래 버튼을 클릭하세요.")
-
-        col_apply, col_cancel = st.columns(2)
-        with col_apply:
-            if st.button("✅ 변경사항 적용", use_container_width=True, type="primary"):
-                st.session_state.enable_manager_i = enable_i
-                st.session_state.enable_manager_m = enable_m
-                st.session_state.enable_manager_s = enable_s
-                st.session_state.enable_manager_t = enable_t
-                st.session_state.agent = create_agent()
-                st.success("✅ Manager 설정이 적용되었습니다!")
-                st.rerun()
-
-        with col_cancel:
-            if st.button("↩️ 취소", use_container_width=True):
-                st.info("변경사항이 취소되었습니다.")
-                st.rerun()
-    else:
-        st.success("✅ 현재 활성화된 Manager 상태입니다.")
+    변경 후 FastAPI 서버를 재시작해야 합니다.
+    """)
 
 # ============================================================================
 # 입력 처리 (화면 모드와 무관하게 실행)

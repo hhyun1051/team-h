@@ -44,7 +44,7 @@ class ManagerM(ManagerBase):
         qdrant_api_key: Optional[str] = None,
         collection_name: Optional[str] = None,
         additional_tools: Optional[List] = None,
-        middleware: Optional[List] = None,
+        additional_middleware: Optional[List] = None,
     ):
         """
         Manager M 에이전트 초기화
@@ -60,7 +60,7 @@ class ManagerM(ManagerBase):
             qdrant_api_key: Qdrant API 키
             collection_name: Qdrant 컬렉션 이름
             additional_tools: 핸드오프 등 추가 툴 리스트
-            middleware: 외부에서 전달받은 미들웨어 리스트 (Langfuse 로깅 등)
+            additional_middleware: 외부에서 전달받은 미들웨어 리스트
         """
         # HITL 미들웨어 생성
         hitl_middleware = HumanInTheLoopMiddleware(
@@ -74,18 +74,18 @@ class ManagerM(ManagerBase):
             description_prefix="🧠 Memory operation pending approval",
         )
 
-        # middleware 리스트 합치기 (외부 middleware + HITL)
-        combined_middleware = []
-        if middleware:
-            combined_middleware.extend(middleware)
-        combined_middleware.append(hitl_middleware)
+        # HITL middleware 추가 (외부 middleware와 결합)
+        # ManagerBase가 자동으로 Langfuse 미들웨어를 추가함
+        combined_middleware = [hitl_middleware]
+        if additional_middleware:
+            combined_middleware.extend(additional_middleware)
 
         # 베이스 클래스 초기화 (공통 로직)
         super().__init__(
             model_name=model_name,
             temperature=temperature,
             additional_tools=additional_tools,
-            middleware=combined_middleware,
+            additional_middleware=combined_middleware,
             # Memory 초기화를 위한 파라미터 전달
             embedding_type=embedding_type,
             embedder_url=embedder_url,

@@ -42,7 +42,7 @@ class ManagerS(ManagerBase):
         tavily_api_key: Optional[str] = None,
         max_results: int = 5,
         additional_tools: Optional[List] = None,
-        middleware: Optional[List] = None,
+        additional_middleware: Optional[List] = None,
     ):
         """
         Manager S 에이전트 초기화
@@ -53,7 +53,7 @@ class ManagerS(ManagerBase):
             tavily_api_key: Tavily API 키
             max_results: 검색 결과 최대 개수
             additional_tools: 핸드오프 등 추가 툴 리스트
-            middleware: 외부에서 전달받은 미들웨어 리스트 (Langfuse 로깅 등)
+            additional_middleware: 외부에서 전달받은 미들웨어 리스트
         """
         # 특수 파라미터 검증 및 저장
         if not tavily_api_key:
@@ -68,7 +68,7 @@ class ManagerS(ManagerBase):
             model_name=model_name,
             temperature=temperature,
             additional_tools=additional_tools,
-            middleware=middleware,
+            additional_middleware=middleware,
         )
 
         # 추가 초기화 메시지
