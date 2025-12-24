@@ -25,6 +25,9 @@ class AgentBase(ABC):
     # 프롬프트 디렉토리 경로
     PROMPTS_DIR = Path(__file__).parent / "prompts"
 
+    # 기본 Context Schema (자식 클래스에서 오버라이드 가능)
+    CONTEXT_SCHEMA = TeamHContext
+
     @property
     @abstractmethod
     def prompt_filename(self) -> str:
