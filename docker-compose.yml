@@ -1,0 +1,36 @@
+version: '3.8'
+
+services:
+  # FastAPI Backend
+  api:
+    build: .
+    container_name: team-h-api
+    command: uvicorn api.main:app --reload --host 0.0.0.0 --port 8000
+    ports:
+      - "8000:8000"
+    volumes:
+      - .:/app
+    env_file:
+      - .env
+    network_mode: host  # host 네트워크로 localhost의 PostgreSQL, Qdrant 등 접근
+    restart: unless-stopped
+    stdin_open: true
+    tty: true
+
+  # Streamlit Frontend
+  streamlit:
+    build: .
+    container_name: team-h-streamlit
+    command: streamlit run streamlits/app.py --server.port 8501 --server.address 0.0.0.0
+    ports:
+      - "8501:8501"
+    volumes:
+      - .:/app
+    env_file:
+      - .env
+    network_mode: host  # host 네트워크로 FastAPI (localhost:8000) 접근
+    restart: unless-stopped
+    stdin_open: true
+    tty: true
+    depends_on:
+      - api

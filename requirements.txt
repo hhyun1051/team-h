@@ -12,13 +12,16 @@ langchain
 langchain-openai
 langchain-huggingface
 langgraph
+langgraph-checkpoint-postgres
 langchain_community
 # Utils
 python-dotenv
 requests
 pyyaml
 
-# Streamlit
+# FastAPI & Streamlit
+fastapi
+uvicorn[standard]
 streamlit
 
 # SmartThings

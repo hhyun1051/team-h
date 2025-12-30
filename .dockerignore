@@ -1,0 +1,58 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+dist/
+build/
+
+# Virtual environments
+venv/
+env/
+ENV/
+.venv
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Git
+.git/
+.gitignore
+
+# Environment
+.env.local
+.env.*.local
+
+# Logs
+*.log
+backend.log
+
+# Cache
+.pytest_cache/
+.cache/
+
+# Database
+*.db
+*.sqlite
+
+# Credentials
+.credentials/
+*.json
+!requirements.txt
+
+# Documentation
+docs/
+*.md
+!README.md
+
+# Workspace
+workspace/
+
+# Examples
+examples/

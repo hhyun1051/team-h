@@ -34,8 +34,6 @@ from streamlits.core.config import (
     DEFAULT_VALUES,
     get_env_defaults,
 )
-from streamlits.core.auth import simple_auth, show_auth_status
-from config.settings import auth_config
 
 # FastAPI 클라이언트 import
 from streamlits.utils.fastapi_client import FastAPIClient
@@ -47,18 +45,6 @@ st.set_page_config(
     page_icon=page_config["page_icon"],
     layout=page_config["layout"]
 )
-
-# ============================================================================
-# 기기 인증 (외부 접속 보호)
-# ============================================================================
-# .env 파일에서 STREAMLIT_AUTH_ENABLED=true로 설정하면 활성화
-# STREAMLIT_AUTH_PASSWORD에 비밀번호 설정
-if auth_config.streamlit_auth_enabled and auth_config.streamlit_auth_password:
-    if not simple_auth(
-        password=auth_config.streamlit_auth_password,
-        expiry_days=auth_config.streamlit_auth_expiry_days
-    ):
-        st.stop()
 
 st.title(page_config["title"])
 st.caption(page_config["caption"])
@@ -113,11 +99,6 @@ initialize_session_state()
 # ============================================================================
 with st.sidebar:
     st.header("⚙️ 설정")
-
-    # 인증 상태 표시
-    if auth_config.streamlit_auth_enabled:
-        show_auth_status()
-        st.divider()
 
     # 화면 모드 선택
     st.subheader("📱 화면 모드")
