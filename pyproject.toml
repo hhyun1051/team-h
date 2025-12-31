@@ -1,0 +1,58 @@
+[project]
+name = "team-h"
+version = "0.1.0"
+description = "Team H AI Agent System"
+readme = "readme.md"
+requires-python = ">=3.11"
+dependencies = [
+    # Database
+    "sqlalchemy",
+    "psycopg2-binary",
+
+    # Vector Database
+    "qdrant-client",
+    "langchain-qdrant",
+    "fastembed",  # fastembed-gpu
+
+    # LangChain
+    "langchain",
+    "langchain-openai",
+    "langchain-huggingface",
+    "langgraph",
+    "langgraph-checkpoint-postgres",
+    "langchain-community",
+    "langchain-postgres",
+
+    # Utils
+    "python-dotenv",
+    "requests",
+    "pyyaml",
+
+    # FastAPI & Streamlit
+    "fastapi",
+    "uvicorn[standard]",
+    "streamlit",
+
+    # SmartThings
+    "pysmartthings",
+
+    # Google Calendar API (Manager T)
+    "google-auth",
+    "google-auth-oauthlib",
+    "google-auth-httplib2",
+    "google-api-python-client",
+    "pytz",
+
+    # Monitoring
+    "langfuse==3.10.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[dependency-groups]
+dev = []
+
+[tool.hatch.build.targets.wheel]
+packages = ["agents", "api", "config", "database", "streamlits", "utils"]

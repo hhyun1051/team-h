@@ -18,11 +18,11 @@ RUN apt-get update && \
     postgresql-client \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy requirements file
-COPY requirements.txt .
+# Copy dependency files
+COPY pyproject.toml uv.lock ./
 
 # Install Python dependencies using uv
-RUN uv pip install --system -r requirements.txt
+RUN uv sync --frozen --no-dev
 
 # Working directory is already /app
 # Application code will be mounted as volume
